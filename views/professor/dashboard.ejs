@@ -1,0 +1,75 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<div class="page-head">
+  <div>
+    <h1>Professor workspace</h1>
+    <p class="muted"><%= professor.department %> · course-level overrides</p>
+  </div>
+</div>
+
+<section class="card">
+  <h2>My sections</h2>
+  <table>
+    <thead><tr><th>Course</th><th>Title</th><th>Term</th><th>CRN</th><th>Enrolled</th><th>Schedule</th></tr></thead>
+    <tbody>
+      <% sections.forEach(function (s) { %>
+        <tr>
+          <td><strong><%= s.code %></strong></td>
+          <td><%= s.title %></td>
+          <td><%= s.term %></td>
+          <td><%= s.crn %></td>
+          <td><%= s.enrolled %> / <%= s.capacity %></td>
+          <td><%= s.schedule %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Prerequisite override requests</h2>
+  <p class="muted">Manual decisions are recorded here. The agent/MCP path requires a signed grant.</p>
+  <label class="inline">Reason <input id="override-reason" placeholder="Optional reason"></label>
+
+  <table>
+    <thead><tr><th>Student</th><th>Course</th><th>Term</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+    <tbody id="live-overrides" data-live>
+      <% overrides.forEach(function (o) { %>
+        <tr>
+          <td><strong><%= o.student_name %></strong><br><span class="muted"><%= o.student_no %></span></td>
+          <td><%= o.code %> · <%= o.title %></td>
+          <td><%= o.term %></td>
+          <td class="muted"><%= o.reason %></td>
+          <td><span class="badge <%= o.status === 'approved' ? 'ok' : o.status === 'denied' ? 'bad' : 'warn' %>"><%= o.status %></span></td>
+          <td class="actions">
+            <% if (o.status === 'pending') { %>
+              <button class="btn small accept" onclick="decideOverride(<%= o.id %>, 'approve')">Approve</button>
+              <button class="btn small reject" onclick="decideOverride(<%= o.id %>, 'deny')">Deny</button>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Meetings</h2>
+  <table>
+    <thead><tr><th>Student</th><th>When</th><th>Reason</th><th>Status</th></tr></thead>
+    <tbody id="live-professor-meetings" data-live>
+      <% meetings.forEach(function (m) { %>
+        <tr>
+          <td><strong><%= m.student_name %></strong><br><span class="muted"><%= m.student_no %></span></td>
+          <td><%= fmtDate(m.start_at) %> · <%= fmtTime(m.start_at) %></td>
+          <td class="muted"><%= m.reason || '—' %></td>
+          <td><span class="badge ok"><%= m.status %></span></td>
+        </tr>
+      <% }) %>
+      <% if (!meetings.length) { %><tr><td colspan="4" class="muted">No meetings scheduled.</td></tr><% } %>
+    </tbody>
+  </table>
+</section>
+
+<%- include('../partials/footer') %>

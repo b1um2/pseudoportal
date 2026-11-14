@@ -1,0 +1,29 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<div class="page-head">
+  <div>
+    <h1>Messages</h1>
+    <p class="muted">Threads with students in your caseload.</p>
+  </div>
+</div>
+
+<section class="card">
+  <table>
+    <thead><tr><th>Student</th><th>Last message</th><th>When</th><th>Unread</th><th></th></tr></thead>
+    <tbody id="live-threads" data-live>
+      <% threads.forEach(function (t) { %>
+        <tr>
+          <td><strong><%= t.student_name %></strong><br><span class="muted"><%= t.student_no %></span></td>
+          <td class="muted"><%= t.last_body || 'No messages yet' %></td>
+          <td><%= t.last_at ? fmtDateTime(t.last_at) : '—' %></td>
+          <td><% if (t.unread) { %><span class="badge warn"><%= t.unread %></span><% } else { %>—<% } %></td>
+          <td><a class="btn small" href="/advisor/messages/<%= t.student_id %>">Open</a></td>
+        </tr>
+      <% }) %>
+      <% if (!threads.length) { %><tr><td colspan="5" class="muted">No students in your caseload.</td></tr><% } %>
+    </tbody>
+  </table>
+</section>
+
+<%- include('../partials/footer') %>

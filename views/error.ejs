@@ -1,0 +1,8 @@
+<%- include('partials/head') %>
+<% if (user) { %><%- include('partials/nav') %><% } %>
+<div class="card narrow">
+  <h1><%= title %></h1>
+  <p class="muted"><%= message %></p>
+  <p><a class="btn" href="/">Go home</a></p>
+</div>
+<% if (user) { %><%- include('partials/footer') %><% } else { %></body></html><% } %>

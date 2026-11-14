@@ -1,0 +1,85 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<div class="page-head">
+  <div>
+    <h1>Case #<%= form.id %></h1>
+    <p class="muted"><%= form.type.replaceAll('_', ' ') %> · <%= form.term %> · submitted <%= fmtDate(form.submitted_at) %></p>
+  </div>
+  <div class="actions">
+    <% if (form.filled_by_agent) { %><span class="badge warn">filled by agent</span><% } %>
+    <span id="live-case-status" data-live><span class="badge <%= form.status === 'approved' ? 'ok' : form.status === 'rejected' ? 'bad' : 'warn' %>"><%= form.status %></span></span>
+  </div>
+</div>
+
+<div class="grid two">
+  <section class="card">
+    <h2>Student</h2>
+    <dl class="facts">
+      <dt>Name</dt><dd><%= form.student_name %></dd>
+      <dt>Number</dt><dd><%= form.student_no %></dd>
+      <dt>Program</dt><dd><%= form.program %></dd>
+      <dt>Catalog</dt><dd><%= form.catalog_year %></dd>
+      <dt>Campus</dt><dd><%= form.campus %></dd>
+      <dt>GPA</dt><dd><%= Number(form.cumulative_gpa).toFixed(2) %></dd>
+      <dt>Standing</dt><dd><%= form.standing %></dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>Request</h2>
+    <dl class="facts">
+      <% Object.entries(data).forEach(function ([key, value]) { %>
+        <dt><%= key %></dt><dd><%= value %></dd>
+      <% }) %>
+    </dl>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Degree progress</h2>
+  <% if (capp) { %>
+    <div class="progress"><div class="progress-bar" style="width:<%= Math.min(100, Math.round((capp.total_earned / capp.total_required) * 100)) %>%"></div></div>
+    <p class="muted"><%= capp.total_earned %> / <%= capp.total_required %> credits</p>
+    <div class="grid two">
+      <% capp.groups.forEach(function (g) { %>
+        <div class="requirement">
+          <div class="requirement-row"><span><%= g.name %></span><span><%= g.applied %> / <%= g.required %></span></div>
+          <div class="progress small"><div class="progress-bar" style="width:<%= Math.min(100, Math.round((g.applied / g.required) * 100)) %>%"></div></div>
+        </div>
+      <% }) %>
+    </div>
+  <% } else { %><p class="muted">No CAPP evaluation.</p><% } %>
+</section>
+
+<section class="card" id="live-case-decision" data-live>
+  <h2>Decision</h2>
+  <% if (form.status === 'pending') { %>
+    <p class="muted">Manual decisions are recorded here without a password. The agent/MCP path requires a signed grant.</p>
+    <div class="stack">
+      <label>Reason <textarea id="decision-reason" rows="2" placeholder="Reason or short note"></textarea></label>
+      <div class="actions">
+        <button class="btn accept" onclick="decideCase('accept')">Accept</button>
+        <button class="btn reject" onclick="decideCase('reject')">Reject</button>
+      </div>
+      <div id="decision-result" class="muted"></div>
+    </div>
+  <% } else { %>
+    <p class="muted">This case was already <%= form.status %>.</p>
+  <% } %>
+
+  <% if (decisions.length) { %>
+    <h3>Decision history</h3>
+    <table>
+      <thead><tr><th>Action</th><th>Reason</th><th>When</th></tr></thead>
+      <tbody>
+        <% decisions.forEach(function (d) { %>
+          <tr><td><%= d.action %></td><td><%= d.reason || '—' %></td><td><%= fmtDate(d.created_at) %></td></tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<script>window.CASE_ID = <%= form.id %>;</script>
+<%- include('../partials/footer') %>

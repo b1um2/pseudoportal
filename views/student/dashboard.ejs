@@ -1,0 +1,135 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<div class="page-head">
+  <div>
+    <h1>Student overview</h1>
+    <p class="muted"><%= student.student_no %> · <%= student.program %> · <%= student.campus %></p>
+  </div>
+  <span class="badge <%= student.standing === 'good' ? 'ok' : 'warn' %>"><%= student.standing %></span>
+</div>
+
+<div class="grid two">
+  <section class="card">
+    <h2>Profile</h2>
+    <dl class="facts">
+      <dt>Name</dt><dd><%= user.display_name %></dd>
+      <dt>Advisor</dt><dd><%= student.advisor_name || 'Not assigned' %></dd>
+      <dt>Catalog</dt><dd><%= student.catalog_year %></dd>
+      <dt>GPA</dt><dd><%= Number(student.cumulative_gpa).toFixed(2) %></dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>Degree progress</h2>
+    <% if (capp) { %>
+      <div class="progress"><div class="progress-bar" style="width:<%= Math.min(100, Math.round((capp.total_earned / capp.total_required) * 100)) %>%"></div></div>
+      <p class="muted"><%= capp.total_earned %> / <%= capp.total_required %> credits · GPA <%= Number(capp.gpa).toFixed(2) %></p>
+      <% capp.groups.forEach(function (g) { %>
+        <div class="requirement">
+          <div class="requirement-row"><span><%= g.name %></span><span><%= g.applied %> / <%= g.required %></span></div>
+          <div class="progress small"><div class="progress-bar" style="width:<%= Math.min(100, Math.round((g.applied / g.required) * 100)) %>%"></div></div>
+        </div>
+      <% }) %>
+    <% } else { %>
+      <p class="muted">No CAPP evaluation loaded.</p>
+    <% } %>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Courses</h2>
+  <table>
+    <thead><tr><th>Code</th><th>Title</th><th>Term</th><th>Status</th><th>Grade</th></tr></thead>
+    <tbody>
+      <% enrollments.forEach(function (e) { %>
+        <tr>
+          <td><%= e.code %></td>
+          <td><%= e.title %></td>
+          <td><%= e.term %></td>
+          <td><span class="badge <%= e.status === 'completed' ? 'ok' : '' %>"><%= e.status %></span></td>
+          <td><%= e.grade || '—' %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</section>
+
+<div class="grid two">
+  <section class="card">
+    <h2>Forms and petitions</h2>
+    <table>
+      <thead><tr><th>Type</th><th>Term</th><th>Status</th></tr></thead>
+      <tbody id="live-student-forms" data-live>
+        <% forms.forEach(function (f) { %>
+          <tr>
+            <td><%= f.type.replaceAll('_', ' ') %><% if (f.filled_by_agent) { %><br><span class="badge warn">filled by agent</span><% } %></td>
+            <td><%= f.term %></td>
+            <td><span class="badge <%= f.status === 'approved' ? 'ok' : f.status === 'rejected' ? 'bad' : 'warn' %>"><%= f.status %></span></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+
+    <h3>New request</h3>
+    <form method="post" action="/student/forms" class="stack">
+      <label>Type
+        <select name="type">
+          <option value="OVERLOAD">Overload</option>
+          <option value="PREREQ_OVERRIDE">Prerequisite override</option>
+          <option value="SUBSTITUTION">Course substitution</option>
+          <option value="LATE_ADD_DROP">Late add/drop</option>
+        </select>
+      </label>
+      <label>Reason
+        <textarea name="reason" rows="2" placeholder="Short reason for the request" required></textarea>
+      </label>
+      <button class="btn primary" type="submit">Submit request</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Meetings</h2>
+    <div id="live-student-meetings" data-live>
+      <% if (!appointments.length) { %><p class="muted">No meetings yet.</p><% } %>
+      <% appointments.forEach(function (a) { %>
+        <div class="list-row">
+          <span><%= a.start_at ? fmtDate(a.start_at) + ' · ' + fmtTime(a.start_at) : 'Requested' %></span>
+          <span class="badge <%= a.status === 'scheduled' || a.status === 'booked' ? 'ok' : 'warn' %>"><%= a.status %></span>
+          <span class="muted"><%= a.meeting_type === 'professor' ? (a.professor_name || 'Professor') : (a.advisor_name || 'Advisor') %></span>
+        </div>
+      <% }) %>
+    </div>
+
+    <h3>Request a meeting</h3>
+    <form method="post" action="/student/meetings" class="stack">
+      <label>Reason
+        <textarea name="reason" rows="2" placeholder="What do you want to discuss?" required></textarea>
+      </label>
+      <label>Preferred date
+        <input type="date" name="preferred_date">
+      </label>
+      <button class="btn primary" type="submit">Request meeting</button>
+    </form>
+
+    <h2 class="spaced">Messages</h2>
+    <p class="muted">Showing the latest 5 messages.</p>
+    <div id="live-student-messages" data-live>
+      <% messages.forEach(function (m) { %>
+        <div class="message <%= m.sender_role %>">
+          <div class="message-meta"><%= m.sender_role %> · <%= fmtDate(m.created_at) %></div>
+          <div><%= m.body %></div>
+        </div>
+      <% }) %>
+    </div>
+    <form method="post" action="/student/messages" class="stack" id="student-message-form">
+      <label>Message your advisor
+        <textarea name="body" id="student-message-body" rows="2" placeholder="Write a short message" required></textarea>
+      </label>
+      <button class="btn" type="submit">Send message</button>
+      <div id="student-message-result" class="muted"></div>
+    </form>
+  </section>
+</div>
+
+<%- include('../partials/footer') %>

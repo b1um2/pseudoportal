@@ -1,0 +1,27 @@
+<%- include('partials/head') %>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand">AyADVI <span>pseudoportal</span></div>
+    <p class="muted">A test portal for the advising workflow. Mock accounts only.</p>
+
+    <% if (error) { %><div class="alert"><%= error %></div><% } %>
+
+    <form method="post" action="/login" class="stack">
+      <label>Username
+        <input name="username" id="username" autocomplete="username" placeholder="student1" required>
+      </label>
+      <label>Password
+        <input name="password" id="password" type="password" autocomplete="current-password" placeholder="1234" required>
+      </label>
+      <button class="btn primary" type="submit">Sign in</button>
+    </form>
+
+    <div class="demo">
+      <div class="demo-title">Demo accounts · password 1234</div>
+      <button class="demo-btn" data-user="student1"><strong>student1</strong><span>student</span></button>
+      <button class="demo-btn" data-user="advisor1"><strong>advisor1</strong><span>advisor</span></button>
+      <button class="demo-btn" data-user="prof1"><strong>prof1</strong><span>professor</span></button>
+    </div>
+  </div>
+</div>
+<%- include('partials/footer') %>

@@ -1,0 +1,27 @@
+{
+  "name": "pseudoportal",
+  "version": "1.0.0",
+  "description": "AyADVI pseudoportal - a test portal for the advising agent",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node seed.js",
+    "db:start": "bash scripts/db-start.sh",
+    "db:stop": "bash scripts/db-stop.sh",
+    "cases": "node scripts/list-cases.js",
+    "evaluate": "node scripts/evaluate-agent.js",
+    "add-cases": "node scripts/add-cases.js",
+    "add-meeting-cases": "node scripts/add-meeting-cases.js",
+    "sync-meeting-answers": "node scripts/sync-meeting-answers.js"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "dependencies": {
+    "csv-parse": "^7.0.3",
+    "ejs": "^7.0.2",
+    "express": "^5.3.0",
+    "express-session": "^1.19.0",
+    "pg": "^8.23.1"
+  }
+}

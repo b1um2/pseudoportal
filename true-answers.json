@@ -1,0 +1,452 @@
+[
+  {
+    "case_code": "C01",
+    "form_id": 1,
+    "student_no": "S20260001",
+    "type": "OVERLOAD",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.H.2",
+    "expected_reason": "GPA is at or above 3.00."
+  },
+  {
+    "case_code": "C02",
+    "form_id": 2,
+    "student_no": "S20260002",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "approved",
+    "expected_rule": "Registration Rules A.3",
+    "expected_reason": "Prerequisite completed with C."
+  },
+  {
+    "case_code": "C03",
+    "form_id": 3,
+    "student_no": "S20260003",
+    "type": "SUBSTITUTION",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Credits and level match; syllabus attached."
+  },
+  {
+    "case_code": "C04",
+    "form_id": 4,
+    "student_no": "S20260004",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "approved",
+    "expected_rule": "Registration Rules E",
+    "expected_reason": "Window is open; no hold."
+  },
+  {
+    "case_code": "C05",
+    "form_id": 5,
+    "student_no": "S20260005",
+    "type": "OVERLOAD",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.H.2 (2.0-3.0 petition)",
+    "expected_reason": "GPA is between 2.00 and 3.00; conditional overload petition."
+  },
+  {
+    "case_code": "C06",
+    "form_id": 6,
+    "student_no": "S20260006",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "approved",
+    "expected_rule": "Prerequisite minimum grade D",
+    "expected_reason": "Prerequisite completed with D."
+  },
+  {
+    "case_code": "C07",
+    "form_id": 7,
+    "student_no": "S20260007",
+    "type": "SUBSTITUTION",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Substitute credits do not match the requirement."
+  },
+  {
+    "case_code": "C08",
+    "form_id": 8,
+    "student_no": "S20260008",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "rejected",
+    "expected_rule": "Registration Rules E.1",
+    "expected_reason": "The drop/add deadline has passed."
+  },
+  {
+    "case_code": "C09",
+    "form_id": 9,
+    "student_no": "S20260009",
+    "type": "OVERLOAD",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.H.2 (2.0-3.0 petition)",
+    "expected_reason": "GPA is between 2.00 and 3.00; conditional overload petition."
+  },
+  {
+    "case_code": "C10",
+    "form_id": 10,
+    "student_no": "S20260010",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "rejected",
+    "expected_rule": "Registration Rules A.3",
+    "expected_reason": "Prerequisite has not been completed."
+  },
+  {
+    "case_code": "C11",
+    "form_id": 11,
+    "student_no": "S20260011",
+    "type": "SUBSTITUTION",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Substitute course level does not match."
+  },
+  {
+    "case_code": "C12",
+    "form_id": 12,
+    "student_no": "S20260012",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "rejected",
+    "expected_rule": "Holds table (UP)",
+    "expected_reason": "A UP probation hold blocks registration."
+  },
+  {
+    "case_code": "C13",
+    "form_id": 13,
+    "student_no": "S20260013",
+    "type": "OVERLOAD",
+    "expected_decision": "rejected",
+    "expected_rule": "Overload form: no incomplete courses",
+    "expected_reason": "CAPP shows an incomplete course, so the overload condition is not met."
+  },
+  {
+    "case_code": "C14",
+    "form_id": 14,
+    "student_no": "S20260014",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "rejected",
+    "expected_rule": "Registration Rules A.4",
+    "expected_reason": "Incomplete grade in the prerequisite."
+  },
+  {
+    "case_code": "C15",
+    "form_id": 15,
+    "student_no": "S20260015",
+    "type": "SUBSTITUTION",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Syllabus is missing, so equivalence cannot be established."
+  },
+  {
+    "case_code": "C16",
+    "form_id": 16,
+    "student_no": "S20260016",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "approved",
+    "expected_rule": "Chair exception",
+    "expected_reason": "Chair approval is recorded."
+  },
+  {
+    "case_code": "C17",
+    "form_id": 17,
+    "student_no": "S20260017",
+    "type": "OVERLOAD",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.H.2",
+    "expected_reason": "Requested credits exceed the 21-credit maximum."
+  },
+  {
+    "case_code": "C18",
+    "form_id": 18,
+    "student_no": "S20260018",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "rejected",
+    "expected_rule": "Registration Rules A.3",
+    "expected_reason": "Prerequisite is in progress, not completed."
+  },
+  {
+    "case_code": "C19",
+    "form_id": 19,
+    "student_no": "S20260019",
+    "type": "SUBSTITUTION",
+    "expected_decision": "approved",
+    "expected_rule": "Arabic substitution",
+    "expected_reason": "MEHE permission is attached."
+  },
+  {
+    "case_code": "C20",
+    "form_id": 20,
+    "student_no": "S20260020",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "rejected",
+    "expected_rule": "Capacity",
+    "expected_reason": "The section is full."
+  },
+  {
+    "case_code": "C21",
+    "form_id": 21,
+    "student_no": "S20260021",
+    "type": "OVERLOAD",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.H.4",
+    "expected_reason": "Student is on probation; the maximum is 13 credits."
+  },
+  {
+    "case_code": "C22",
+    "form_id": 22,
+    "student_no": "S20260022",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "approved",
+    "expected_rule": "Transfer credit",
+    "expected_reason": "Equivalent transfer credit is recorded."
+  },
+  {
+    "case_code": "C23",
+    "form_id": 23,
+    "student_no": "S20260023",
+    "type": "SUBSTITUTION",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Learning outcomes do not match the required course."
+  },
+  {
+    "case_code": "C24",
+    "form_id": 24,
+    "student_no": "S20260024",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.H.2",
+    "expected_reason": "The request would exceed the credit cap."
+  },
+  {
+    "case_code": "C25",
+    "form_id": 25,
+    "student_no": "S20260025",
+    "type": "OVERLOAD",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.H.2",
+    "expected_reason": "GPA is at or above 3.00."
+  },
+  {
+    "case_code": "C26",
+    "form_id": 26,
+    "student_no": "S20260026",
+    "type": "OVERLOAD",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.H.4",
+    "expected_reason": "Student is on probation; the maximum is 13 credits."
+  },
+  {
+    "case_code": "C27",
+    "form_id": 27,
+    "student_no": "S20260027",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "approved",
+    "expected_rule": "Registration Rules A.3",
+    "expected_reason": "Prerequisite completed with C."
+  },
+  {
+    "case_code": "C28",
+    "form_id": 28,
+    "student_no": "S20260028",
+    "type": "SUBSTITUTION",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Credits and level match; syllabus attached."
+  },
+  {
+    "case_code": "C29",
+    "form_id": 29,
+    "student_no": "S20260029",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "approved",
+    "expected_rule": "Registration Rules E",
+    "expected_reason": "Window is open; no hold."
+  },
+  {
+    "case_code": "C30",
+    "form_id": 30,
+    "student_no": "S20260030",
+    "type": "OVERLOAD",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.H.2 (2.0-3.0 petition)",
+    "expected_reason": "GPA is between 2.00 and 3.00; conditional overload petition."
+  },
+  {
+    "case_code": "C31",
+    "form_id": 31,
+    "student_no": "S20260031",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "approved",
+    "expected_rule": "Prerequisite minimum grade D",
+    "expected_reason": "Prerequisite completed with D."
+  },
+  {
+    "case_code": "C32",
+    "form_id": 32,
+    "student_no": "S20260032",
+    "type": "SUBSTITUTION",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Substitute credits do not match the requirement."
+  },
+  {
+    "case_code": "C33",
+    "form_id": 33,
+    "student_no": "S20260033",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "rejected",
+    "expected_rule": "Registration Rules E.1",
+    "expected_reason": "The drop/add deadline has passed."
+  },
+  {
+    "case_code": "C34",
+    "form_id": 34,
+    "student_no": "S20260034",
+    "type": "OVERLOAD",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.H.2 (2.0-3.0 petition)",
+    "expected_reason": "GPA is between 2.00 and 3.00; conditional overload petition."
+  },
+  {
+    "case_code": "C35",
+    "form_id": 35,
+    "student_no": "S20260035",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "rejected",
+    "expected_rule": "Registration Rules A.3",
+    "expected_reason": "Prerequisite has not been completed."
+  },
+  {
+    "case_code": "C36",
+    "form_id": 36,
+    "student_no": "S20260036",
+    "type": "SUBSTITUTION",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Substitute course level does not match."
+  },
+  {
+    "case_code": "C37",
+    "form_id": 37,
+    "student_no": "S20260037",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "rejected",
+    "expected_rule": "Holds table (UP)",
+    "expected_reason": "A UP probation hold blocks registration."
+  },
+  {
+    "case_code": "C38",
+    "form_id": 38,
+    "student_no": "S20260038",
+    "type": "OVERLOAD",
+    "expected_decision": "rejected",
+    "expected_rule": "Overload form: no incomplete courses",
+    "expected_reason": "CAPP shows an incomplete course, so the overload condition is not met."
+  },
+  {
+    "case_code": "C39",
+    "form_id": 39,
+    "student_no": "S20260039",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "rejected",
+    "expected_rule": "Registration Rules A.4",
+    "expected_reason": "Incomplete grade in the prerequisite."
+  },
+  {
+    "case_code": "C40",
+    "form_id": 40,
+    "student_no": "S20260040",
+    "type": "SUBSTITUTION",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Syllabus is missing, so equivalence cannot be established."
+  },
+  {
+    "case_code": "C41",
+    "form_id": 41,
+    "student_no": "S20260041",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "approved",
+    "expected_rule": "Chair exception",
+    "expected_reason": "Chair approval is recorded."
+  },
+  {
+    "case_code": "C42",
+    "form_id": 42,
+    "student_no": "S20260042",
+    "type": "OVERLOAD",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.H.2",
+    "expected_reason": "Requested credits exceed the 21-credit maximum."
+  },
+  {
+    "case_code": "C43",
+    "form_id": 43,
+    "student_no": "S20260043",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "rejected",
+    "expected_rule": "Registration Rules A.3",
+    "expected_reason": "Prerequisite is in progress, not completed."
+  },
+  {
+    "case_code": "C44",
+    "form_id": 44,
+    "student_no": "S20260044",
+    "type": "SUBSTITUTION",
+    "expected_decision": "approved",
+    "expected_rule": "Arabic substitution",
+    "expected_reason": "MEHE permission is attached."
+  },
+  {
+    "case_code": "C45",
+    "form_id": 45,
+    "student_no": "S20260045",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "rejected",
+    "expected_rule": "Capacity",
+    "expected_reason": "The section is full."
+  },
+  {
+    "case_code": "C46",
+    "form_id": 46,
+    "student_no": "S20260046",
+    "type": "OVERLOAD",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.H.4",
+    "expected_reason": "Student is on probation; the maximum is 13 credits."
+  },
+  {
+    "case_code": "C47",
+    "form_id": 47,
+    "student_no": "S20260047",
+    "type": "PREREQ_OVERRIDE",
+    "expected_decision": "approved",
+    "expected_rule": "Transfer credit",
+    "expected_reason": "Equivalent transfer credit is recorded."
+  },
+  {
+    "case_code": "C48",
+    "form_id": 48,
+    "student_no": "S20260048",
+    "type": "SUBSTITUTION",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.E",
+    "expected_reason": "Learning outcomes do not match the required course."
+  },
+  {
+    "case_code": "C49",
+    "form_id": 49,
+    "student_no": "S20260049",
+    "type": "LATE_ADD_DROP",
+    "expected_decision": "rejected",
+    "expected_rule": "Academic Rules I.H.2",
+    "expected_reason": "The request would exceed the credit cap."
+  },
+  {
+    "case_code": "C50",
+    "form_id": 50,
+    "student_no": "S20260050",
+    "type": "OVERLOAD",
+    "expected_decision": "approved",
+    "expected_rule": "Academic Rules I.H.2",
+    "expected_reason": "GPA is at or above 3.00."
+  }
+]
