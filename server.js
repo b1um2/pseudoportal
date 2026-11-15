@@ -7,11 +7,54 @@ const { one, many, query, tx, init } = require('./db');
 const { hashPassword, verifyPassword, requireRole, requireAnyRole, requireAgentKey, requireDashboardKey } = require('./lib/auth');
 const { verifyGrant } = require('./lib/grant');
 const { SLOTS, availableSlots, nextWeekday } = require('./lib/schedule');
+const { renderMarkdown, plainMarkdown } = require('./lib/markdown');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const TRUE_ANSWERS = path.join(__dirname, 'true-answers.json');
 const TRUE_MEETING_ANSWERS = path.join(__dirname, 'true-meeting-answers.json');
+const SAFETY_SERVICE_URL = process.env.SAFETY_SERVICE_URL || 'http://127.0.0.1:3003';
+
+async function safetyCheck(text, { kind = 'request', direction = 'inbound', context = '' } = {}) {
+  const content = String(text || '').trim();
+  if (!content) return { safe: true, category: 'empty', reason: 'Empty content.' };
+  try {
+    const response = await fetch(`${SAFETY_SERVICE_URL}/guard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: content.slice(0, 6000), kind, direction, context }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error(`guard HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('safety guard unavailable', error.message);
+    return {
+      safe: false,
+      category: 'guard_unavailable',
+      reason: 'The safety check is unavailable right now. Please try again.',
+    };
+  }
+}
+
+function guardTextFromBody(body) {
+  if (!body || typeof body !== 'object') return '';
+  const pieces = [];
+  for (const key of ['body', 'message', 'reason', 'reasoning', 'summary', 'comment', 'text']) {
+    if (body[key] !== undefined && body[key] !== null) pieces.push(String(body[key]));
+  }
+  for (const key of ['data', 'payload', 'details']) {
+    if (body[key] && typeof body[key] === 'object') pieces.push(JSON.stringify(body[key]));
+  }
+  return pieces.join('\n').trim().slice(0, 6000);
+}
+
+function guardKind(pathname) {
+  if (pathname.includes('meeting')) return 'meeting';
+  if (pathname.includes('form') || pathname.includes('case')) return 'form';
+  if (pathname.includes('message') || pathname.includes('suggest')) return 'message';
+  return 'request';
+}
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -34,6 +77,36 @@ app.use((req, res, next) => {
   res.locals.fmtTime = (value) => value ? new Date(value).toISOString().slice(11, 16) : '';
   res.locals.fmtDateTime = (value) => value ? new Date(value).toISOString().slice(0, 16).replace('T', ' ') : '';
   next();
+});
+
+app.use(async (req, res, next) => {
+  if (req.method !== 'POST') return next();
+  const guardedPath = req.path.startsWith('/student/')
+    || req.path.startsWith('/advisor/messages')
+    || req.path.startsWith('/advisor/meetings')
+    || req.path.startsWith('/api/');
+  if (!guardedPath) return next();
+
+  const text = guardTextFromBody(req.body);
+  if (!text) return next();
+
+  const result = await safetyCheck(text, {
+    kind: guardKind(req.path),
+    direction: 'inbound',
+    context: `${req.method} ${req.path}`,
+  });
+  if (result.safe) {
+    req.safety = result;
+    return next();
+  }
+
+  const wantsJson = String(req.get('accept') || '').includes('application/json')
+    || req.path.startsWith('/api/');
+  const message = result.reason || 'This request was blocked by the safety check.';
+  if (wantsJson) {
+    return res.status(422).json({ status: 'blocked', message, category: result.category || 'unsafe' });
+  }
+  return res.status(422).render('error', { title: 'Request blocked', message });
 });
 
 function readTrueAnswers() {
@@ -173,19 +246,19 @@ async function executeApprovedAction(row) {
     const student = await one('SELECT * FROM students WHERE id = $1', [studentId]);
     const formType = String(payload.type || '').toUpperCase();
     if (!student || !['OVERLOAD', 'PREREQ_OVERRIDE', 'SUBSTITUTION', 'LATE_ADD_DROP'].includes(formType)) {
-      throw new Error('invalid agent form');
+      throw new Error('invalid form payload');
     }
     const data = payload.data && typeof payload.data === 'object' ? { ...payload.data } : {};
-    data.reason = String(payload.reason || data.reason || 'Requested through the messaging agent').slice(0, 1000);
+    data.reason = String(payload.reason || data.reason || 'Requested through a message').slice(0, 1000);
     const term = String(payload.term || '2026-Fall').slice(0, 20);
     return tx(async (client) => {
       const inserted = await client.query(`
         INSERT INTO forms (
-          student_id, type, term, status, submitted_at, data_json, assigned_advisor_id, filled_by_agent
-        ) VALUES ($1, $2, $3, 'pending', NOW(), $4, $5, TRUE)
+          student_id, type, term, status, submitted_at, data_json, assigned_advisor_id
+        ) VALUES ($1, $2, $3, 'pending', NOW(), $4, $5)
         RETURNING id
       `, [studentId, formType, term, JSON.stringify(data), student.advisor_id]);
-      await audit(row.actor_id, 'form_filled_by_agent', 'form', inserted.rows[0].id,
+      await audit(row.actor_id, 'form_submitted', 'form', inserted.rows[0].id,
         { source: 'approval_code', request_id: row.request_id, type: formType }, null, client);
       return { form_id: inserted.rows[0].id };
     });
@@ -194,7 +267,11 @@ async function executeApprovedAction(row) {
   if ((row.action === 'accept' || row.action === 'reject') && row.object_type === 'form') {
     const formId = Number(row.object_id);
     const advisor = await one('SELECT * FROM advisors WHERE user_id = $1', [row.actor_id]);
-    const form = await one('SELECT * FROM forms WHERE id = $1 AND assigned_advisor_id = $2', [formId, advisor?.id]);
+    const form = await one(`
+      SELECT f.*, s.cumulative_gpa::float8 AS cumulative_gpa, s.standing
+      FROM forms f JOIN students s ON s.id = f.student_id
+      WHERE f.id = $1 AND f.assigned_advisor_id = $2
+    `, [formId, advisor?.id]);
     if (!form || form.status !== 'pending') throw new Error('form is not pending');
     const reason = String(payload.reason || '').slice(0, 500);
     return tx(async (client) => {
@@ -204,10 +281,10 @@ async function executeApprovedAction(row) {
         WHERE id = $5 AND status = 'pending'
       `, [row.action === 'accept' ? 'approved' : 'rejected', row.action, row.actor_id, reason, formId]);
       if (updated.rowCount !== 1) throw new Error('form state changed');
-      await client.query(`
-        INSERT INTO decisions (form_id, actor_id, action, reason, agent_recommendation, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-      `, [formId, row.actor_id, row.action, reason, 'Approved on agent dashboard']);
+      await insertDecision(client, {
+        formId, actorId: row.actor_id, advisorId: advisor.id, action: row.action,
+        reason, form, aiSuggestionId: row.ai_suggestion_id || null
+      });
       await audit(row.actor_id, row.action === 'accept' ? 'form_approved_agent' : 'form_rejected_agent',
         'form', formId, { reason, source: 'approval_code', request_id: row.request_id }, null, client);
       return {};
@@ -288,6 +365,76 @@ async function audit(actorId, action, objectType, objectId, details = {}, ip = n
   const params = [actorId, action, objectType, objectId, JSON.stringify(details), ip];
   if (client) await client.query(sql, params);
   else await query(sql, params);
+}
+
+function decisionSnapshot(form) {
+  const data = asObject(form.data_json, {});
+  const credits = data.requested_credits ?? data.current_credits ?? null;
+  return {
+    gpa: form.cumulative_gpa == null ? null : Number(form.cumulative_gpa),
+    credits: credits == null ? null : Number(credits),
+    standing: form.standing || null,
+    prereq_status: data.prerequisite_status || null,
+    deadline_status: data.window_open === true ? 'open' : data.window_open === false ? 'closed' : null
+  };
+}
+
+async function insertDecision(client, {
+  formId, actorId, advisorId, action, reason, form, aiSuggestionId = null
+}) {
+  const outcome = action === 'accept' ? 'approved' : 'rejected';
+  await client.query(`
+    INSERT INTO decisions (
+      form_id, actor_id, action, reason, agent_recommendation, created_at,
+      request_id, advisor_id, form_type, outcome, comment, decided_at,
+      ai_suggestion_id, ai_suggestion_accepted, student_snapshot_json
+    ) VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9, $10, NOW(), $11, $12, $13)
+  `, [
+    formId,
+    actorId,
+    action,
+    reason,
+    aiSuggestionId ? 'Approved on advisor interface' : null,
+    `FORM-${formId}`,
+    advisorId == null ? null : String(advisorId),
+    String(form.type || '').toLowerCase(),
+    outcome,
+    reason,
+    aiSuggestionId,
+    aiSuggestionId ? true : null,
+    JSON.stringify(decisionSnapshot(form))
+  ]);
+  await client.query(`
+    UPDATE ai_suggestions SET status = 'superseded', decided_at = NOW()
+    WHERE kind = 'form' AND form_id = $1 AND status = 'pending'
+      AND id <> COALESCE($2, -1)
+  `, [formId, aiSuggestionId]);
+}
+
+async function supersedeMeetingSuggestions(meetingId, keepId = null) {
+  const meeting = await one(`
+    SELECT student_id, advisor_id, professor_id, start_at
+    FROM appointments WHERE id = $1
+  `, [meetingId]);
+  if (!meeting || !meeting.start_at) return;
+  const date = new Date(meeting.start_at).toISOString().slice(0, 10);
+  const time = new Date(meeting.start_at).toISOString().slice(11, 16);
+  await query(`
+    UPDATE ai_suggestions ai SET status = 'superseded', decided_at = NOW()
+    WHERE ai.kind = 'meeting' AND ai.status = 'pending'
+      AND ai.id <> COALESCE($1, -1)
+      AND (
+        ai.appointment_id = $2
+        OR (
+          ai.payload_json->>'date' = $3 AND ai.payload_json->>'time' = $4
+          AND EXISTS (
+            SELECT 1 FROM appointments other
+            WHERE other.id = ai.appointment_id
+              AND (other.student_id = $5 OR other.advisor_id = $6 OR other.professor_id = $7)
+          )
+        )
+      )
+  `, [keepId, meetingId, date, time, meeting.student_id, meeting.advisor_id, meeting.professor_id]);
 }
 
 async function studentForUser(userId) {
@@ -379,7 +526,7 @@ app.get('/student', requireRole('student'), async (req, res) => {
     WHERE ap.student_id = $1
     ORDER BY COALESCE(ap.start_at, ap.requested_at) DESC
   `, [student.id]);
-  const messages = await many(`
+  const messages = (await many(`
     SELECT * FROM (
       SELECT m.*, u.display_name AS advisor_name
       FROM messages m
@@ -390,7 +537,7 @@ app.get('/student', requireRole('student'), async (req, res) => {
       LIMIT 5
     ) recent
     ORDER BY recent.created_at ASC
-  `, [student.id]);
+  `, [student.id])).map((message) => ({ ...message, body_html: renderMarkdown(message.body) }));
 
   res.render('student/dashboard', { title: 'Student', student, capp, enrollments, forms, appointments, messages });
 });
@@ -643,6 +790,7 @@ app.post('/advisor/meetings/:id/schedule', requireRole('advisor'), async (req, r
   await query(`INSERT INTO messages (student_id, advisor_id, sender_role, body) VALUES ($1, $2, 'advisor', $3)`,
     [meeting.student_id, advisor.id, `Your meeting is scheduled for ${date} at ${time}.`]);
   await audit(req.session.user.id, 'meeting_scheduled', 'appointment', meeting.id, { date, time, type: 'advisor' }, req.ip);
+  await supersedeMeetingSuggestions(meeting.id);
   res.redirect('/advisor/meetings');
 });
 
@@ -666,6 +814,7 @@ app.post('/advisor/meetings/:id/reject', requireRole('advisor'), async (req, res
     `, [meeting.student_id, advisor.id, `Your meeting request could not be scheduled: ${reason}`]);
     await audit(req.session.user.id, 'meeting_rejected_manual', 'appointment', meeting.id, { reason, source: 'manual_portal' }, req.ip, client);
   });
+  await supersedeMeetingSuggestions(meeting.id);
 
   res.redirect('/advisor/meetings');
 });
@@ -723,13 +872,10 @@ app.get('/advisor/audit', requireRole('advisor'), async (req, res) => {
 
 app.get('/api/advisor/check-results', requireRole('advisor'), async (req, res) => {
   const formAnswers = readTrueAnswers();
-  const meetingAnswers = readMeetingAnswers();
   const forms = await many('SELECT id, status, decision, reason FROM forms');
-  const appointments = await many('SELECT id, status, reason FROM appointments');
   const byForm = new Map(forms.map((row) => [row.id, row]));
-  const byAppointment = new Map(appointments.map((row) => [row.id, row]));
 
-  const formCases = formAnswers.map((answer) => {
+  const cases = formAnswers.map((answer) => {
     const form = byForm.get(answer.form_id);
     const actual = form?.status === 'approved' ? 'approved' : form?.status === 'rejected' ? 'rejected' : null;
     return {
@@ -745,31 +891,11 @@ app.get('/api/advisor/check-results', requireRole('advisor'), async (req, res) =
     };
   });
 
-  const meetingCases = meetingAnswers.map((answer) => {
-    const appointment = byAppointment.get(answer.appointment_id);
-    const actual = appointment?.status === 'scheduled' || appointment?.status === 'booked'
-      ? 'scheduled'
-      : appointment?.status === 'rejected' ? 'rejected' : null;
-    return {
-      kind: 'meeting',
-      case: answer.case_code,
-      form: answer.appointment_id,
-      expected: answer.expected_decision,
-      actual,
-      status: appointment?.status || 'missing',
-      correct: actual === answer.expected_decision,
-      rule: answer.expected_rule,
-      reason: appointment?.reason || null
-    };
-  });
-
-  const cases = [...formCases, ...meetingCases];
-  const wrong = cases.filter((row) => !row.correct);
   res.json({
     total: cases.length,
     decided: cases.filter((row) => row.actual).length,
     correct: cases.filter((row) => row.correct).length,
-    wrong
+    wrong: cases.filter((row) => !row.correct)
   });
 });
 
@@ -814,7 +940,11 @@ app.post('/api/advisor/cases/:id/decision', requireRole('advisor'), async (req, 
     return res.status(400).json({ status: 'failed', message: 'failed and data not stored' });
   }
 
-  const form = await one('SELECT * FROM forms WHERE id = $1 AND assigned_advisor_id = $2', [id, advisor.id]);
+  const form = await one(`
+    SELECT f.*, s.cumulative_gpa::float8 AS cumulative_gpa, s.standing
+    FROM forms f JOIN students s ON s.id = f.student_id
+    WHERE f.id = $1 AND f.assigned_advisor_id = $2
+  `, [id, advisor.id]);
   if (!form || form.status !== 'pending') {
     return res.json({ status: 'failed', message: 'failed and data not stored' });
   }
@@ -828,10 +958,10 @@ app.post('/api/advisor/cases/:id/decision', requireRole('advisor'), async (req, 
 
       if (updated.rowCount !== 1) throw new Error('case state changed');
 
-      await client.query(`
-        INSERT INTO decisions (form_id, actor_id, action, reason, agent_recommendation, created_at)
-        VALUES ($1, $2, $3, $4, NULL, NOW())
-      `, [id, req.session.user.id, action, reason]);
+      await insertDecision(client, {
+        formId: id, actorId: req.session.user.id, advisorId: advisor.id,
+        action, reason, form
+      });
 
       await audit(req.session.user.id, action === 'accept' ? 'form_approved_manual' : 'form_rejected_manual', 'form', id, { reason, source: 'manual_portal' }, req.ip, client);
     });
@@ -877,7 +1007,7 @@ app.get('/advisor/messages', requireRole('advisor'), async (req, res) => {
   const advisor = await advisorForUser(req.session.user.id);
   if (!advisor) return res.status(404).render('error', { title: 'Not found', message: 'No advisor record.' });
 
-  const threads = await many(`
+  const threads = (await many(`
     SELECT s.id AS student_id, s.student_no, u.display_name AS student_name,
            lm.body AS last_body, lm.created_at AS last_at, COALESCE(unread.n, 0) AS unread
     FROM students s
@@ -891,7 +1021,7 @@ app.get('/advisor/messages', requireRole('advisor'), async (req, res) => {
     ) unread ON TRUE
     WHERE s.advisor_id = $1
     ORDER BY lm.created_at DESC NULLS LAST
-  `, [advisor.id]);
+  `, [advisor.id])).map((thread) => ({ ...thread, last_body_text: plainMarkdown(thread.last_body) }));
 
   res.render('advisor/messages', { title: 'Messages', advisor, threads });
 });
@@ -912,11 +1042,11 @@ app.get('/advisor/messages/:studentId', requireRole('advisor'), async (req, res)
     WHERE student_id = $1 AND sender_role = 'student' AND read_at IS NULL
   `, [student.id]);
 
-  const messages = await many(`
+  const messages = (await many(`
     SELECT * FROM (
       SELECT * FROM messages WHERE student_id = $1 ORDER BY created_at DESC LIMIT 5
     ) recent ORDER BY recent.created_at ASC
-  `, [student.id]);
+  `, [student.id])).map((message) => ({ ...message, body_html: renderMarkdown(message.body) }));
   res.render('advisor/thread', { title: 'Messages · ' + student.student_name, advisor, student, messages });
 });
 
@@ -940,14 +1070,21 @@ app.post('/advisor/reset-cases', requireRole('advisor'), async (req, res) => {
   if (!advisor) return res.status(403).render('error', { title: 'Forbidden', message: 'No advisor record.' });
 
   await tx(async (client) => {
-    await client.query('DELETE FROM decisions');
+    await client.query(`
+      CREATE TEMP TABLE reset_forms ON COMMIT DROP AS
+      SELECT form_id FROM test_cases
+      ORDER BY random()
+      LIMIT (SELECT GREATEST(1, CEIL(COUNT(*) * 0.5)::int) FROM test_cases)
+    `);
+    await client.query('DELETE FROM decisions WHERE form_id IN (SELECT form_id FROM reset_forms)');
+    await client.query('DELETE FROM ai_suggestions WHERE form_id IN (SELECT form_id FROM reset_forms)');
     await client.query(`
       UPDATE forms
       SET status = 'pending', decision = NULL, decided_by = NULL, decided_at = NULL, reason = NULL
+      WHERE id IN (SELECT form_id FROM reset_forms)
     `);
-    // The queue reset is form-only. Meetings have their own Reset meetings button.
-    await audit(req.session.user.id, 'queue_reset_for_agent', 'evaluation_run', null,
-      { source: 'advisor_portal', scope: 'forms' }, req.ip, client);
+    await audit(req.session.user.id, 'queue_reset_for_review', 'evaluation_run', null,
+      { source: 'advisor_portal', scope: 'forms', reset_fraction: 0.5 }, req.ip, client);
   });
 
   res.redirect('/advisor?reset=1');
@@ -959,13 +1096,20 @@ app.post('/advisor/reset-meetings', requireRole('advisor'), async (req, res) => 
 
   await tx(async (client) => {
     await client.query(`
+      CREATE TEMP TABLE reset_meetings ON COMMIT DROP AS
+      SELECT appointment_id FROM meeting_test_cases
+      ORDER BY random()
+      LIMIT (SELECT GREATEST(1, CEIL(COUNT(*) * 0.5)::int) FROM meeting_test_cases)
+    `);
+    await client.query('DELETE FROM ai_suggestions WHERE appointment_id IN (SELECT appointment_id FROM reset_meetings)');
+    await client.query(`
       UPDATE appointments
       SET status = 'requested', start_at = NULL, end_at = NULL,
           scheduled_by = NULL, reason = NULL, agent_reasoning = NULL
-      WHERE id IN (SELECT appointment_id FROM meeting_test_cases)
+      WHERE id IN (SELECT appointment_id FROM reset_meetings)
     `);
-    await audit(req.session.user.id, 'meetings_reset_for_agent', 'evaluation_run', null,
-      { source: 'advisor_portal', archived: false }, req.ip, client);
+    await audit(req.session.user.id, 'meetings_reset_for_review', 'evaluation_run', null,
+      { source: 'advisor_portal', reset_fraction: 0.5 }, req.ip, client);
   });
 
   res.redirect('/advisor/meetings?reset=1');
@@ -977,6 +1121,15 @@ app.post('/advisor/apply-true-meetings', requireRole('advisor'), async (req, res
 
   const meetingAnswers = readMeetingAnswers();
   await tx(async (client) => {
+    await client.query('DELETE FROM ai_suggestions WHERE appointment_id IS NOT NULL');
+    // Clear the old slots first so moving a case cannot collide with its own
+    // previous schedule while the true answers are being restored.
+    await client.query(`
+      UPDATE appointments
+      SET status = 'requested', start_at = NULL, end_at = NULL,
+          scheduled_by = NULL, reason = NULL, agent_reasoning = NULL
+      WHERE id IN (SELECT appointment_id FROM meeting_test_cases)
+    `);
     for (const answer of meetingAnswers) {
       if (answer.expected_decision === 'scheduled') {
         const start = new Date(`${answer.preferred_date}T${answer.preferred_time}:00Z`);
@@ -1010,14 +1163,19 @@ app.post('/advisor/apply-true-answers', requireRole('advisor'), async (req, res)
   if (!advisor) return res.status(403).render('error', { title: 'Forbidden', message: 'No advisor record.' });
 
   const answers = readTrueAnswers();
-  const meetingAnswers = readMeetingAnswers();
   await tx(async (client) => {
     await client.query('DELETE FROM decisions');
+    await client.query('DELETE FROM ai_suggestions WHERE form_id IS NOT NULL');
     for (const answer of answers) {
       const status = answer.expected_decision === 'approved' ? 'approved' : 'rejected';
       const decision = status === 'approved' ? 'accept' : 'reject';
-      const form = await client.query('SELECT id FROM forms WHERE id = $1', [answer.form_id]);
+      const form = await client.query(`
+        SELECT f.*, s.cumulative_gpa::float8 AS cumulative_gpa, s.standing
+        FROM forms f JOIN students s ON s.id = f.student_id
+        WHERE f.id = $1
+      `, [answer.form_id]);
       if (!form.rowCount) continue;
+      const row = form.rows[0];
 
       await client.query(`
         UPDATE forms
@@ -1025,33 +1183,14 @@ app.post('/advisor/apply-true-answers', requireRole('advisor'), async (req, res)
         WHERE id = $5
       `, [status, decision, req.session.user.id, answer.expected_reason, answer.form_id]);
 
-      await client.query(`
-        INSERT INTO decisions (form_id, actor_id, action, reason, agent_recommendation, created_at)
-        VALUES ($1, $2, $3, $4, NULL, NOW())
-      `, [answer.form_id, req.session.user.id, decision, answer.expected_reason]);
-    }
-    for (const answer of meetingAnswers) {
-      if (answer.expected_decision === 'scheduled') {
-        const start = new Date(`${answer.preferred_date}T${answer.preferred_time}:00Z`);
-        const end = new Date(start.getTime() + 60 * 60 * 1000);
-        await client.query(`
-          UPDATE appointments
-          SET status = 'scheduled', start_at = $1, end_at = $2,
-              scheduled_by = $3, agent_reasoning = $4
-          WHERE id = $5
-        `, [start.toISOString(), end.toISOString(), req.session.user.id, answer.expected_reason, answer.appointment_id]);
-      } else {
-        await client.query(`
-          UPDATE appointments
-          SET status = 'rejected', start_at = NULL, end_at = NULL,
-              scheduled_by = $1, agent_reasoning = $2
-          WHERE id = $3
-        `, [req.session.user.id, answer.expected_reason, answer.appointment_id]);
-      }
+      await insertDecision(client, {
+        formId: answer.form_id, actorId: req.session.user.id, advisorId: row.assigned_advisor_id,
+        action: decision, reason: answer.expected_reason, form: row
+      });
     }
 
     await audit(req.session.user.id, 'true_answers_applied', 'evaluation_run', null,
-      { forms: answers.length, meetings: meetingAnswers.length, source: 'advisor_portal' }, req.ip, client);
+      { forms: answers.length, scope: 'forms', source: 'advisor_portal' }, req.ip, client);
   });
 
   res.redirect('/advisor?applied=1');
@@ -1165,7 +1304,7 @@ app.get('/api/agent/v1/health', (req, res) => {
   res.json({ status: 'ok', service: 'pseudoportal', database: 'postgresql', time: new Date().toISOString() });
 });
 
-// The agent/MCP can request approval, but it never receives the review code.
+// External API callers can request approval, but they never receive the review code.
 // Only the local dashboard, using the dashboard key, can see the code and
 // approve or reject the exact action.
 app.post('/api/agent/v1/approvals', async (req, res) => {
@@ -1261,7 +1400,7 @@ app.get('/api/agent/v1/approvals/:requestId', async (req, res) => {
   });
 });
 
-// The portal, not the MCP or the agent app, performs the write. It claims the
+// The portal, not the external caller, performs the write. It claims the
 // approved row exactly once, then executes the action stored with that row.
 app.post('/api/agent/v1/approvals/:requestId/execute', async (req, res) => {
   let row = await one('SELECT * FROM agent_approvals WHERE request_id = $1', [String(req.params.requestId)]);
@@ -1324,7 +1463,7 @@ app.post('/api/approvals/:requestId/approve', requireDashboardKey, async (req, r
     WHERE id = $1 AND status = 'pending'
   `, [row.id]);
   await audit(row.actor_id, 'approval_approved', row.object_type, row.object_id,
-    { action: row.action, request_id: row.request_id, source: 'agent_dashboard' }, req.ip);
+    { action: row.action, request_id: row.request_id, source: 'review_dashboard' }, req.ip);
   res.json({ status: 'approved', request_id: row.request_id });
 });
 
@@ -1345,13 +1484,206 @@ app.post('/api/approvals/:requestId/reject', requireDashboardKey, async (req, re
     await query(`
       UPDATE appointments
       SET status = 'rejected', start_at = NULL, end_at = NULL, scheduled_by = NULL,
-          agent_reasoning = NULL, reason = 'Meeting request rejected on the agent dashboard.'
+          agent_reasoning = NULL, reason = 'Meeting request rejected during review.'
       WHERE id = $1 AND status = 'requested'
     `, [row.object_id]);
   }
   await audit(row.actor_id, 'approval_rejected', row.object_type, row.object_id,
-    { action: row.action, request_id: row.request_id, source: 'agent_dashboard' }, req.ip);
+    { action: row.action, request_id: row.request_id, source: 'review_dashboard' }, req.ip);
   res.json({ status: 'rejected', request_id: row.request_id });
+});
+
+app.get('/api/agent/v1/suggestions', async (req, res) => {
+  const rows = await many(`
+    SELECT ai.*, f.type AS form_type_value, s.student_no, u.display_name AS student_name
+    FROM ai_suggestions ai
+    LEFT JOIN forms f ON f.id = ai.form_id
+    LEFT JOIN appointments ap ON ap.id = ai.appointment_id
+    LEFT JOIN students s ON s.id = ai.student_id
+    LEFT JOIN users u ON u.id = s.user_id
+    WHERE ai.status = 'pending'
+    ORDER BY ai.created_at DESC
+    LIMIT 100
+  `);
+  res.json({ suggestions: rows });
+});
+
+app.post('/api/agent/v1/suggestions', async (req, res) => {
+  const kind = String(req.body.kind || '');
+  if (!['form', 'meeting'].includes(kind)) return res.status(400).json({ status: 'failed', message: 'invalid kind' });
+  const action = String(req.body.action || '').slice(0, 40);
+  const payload = req.body.payload && typeof req.body.payload === 'object' ? req.body.payload : {};
+  const formId = req.body.form_id || null;
+  const appointmentId = req.body.appointment_id || null;
+  try {
+    const suggestionId = await tx(async (client) => {
+      if (kind === 'form') {
+        const target = await client.query('SELECT status FROM forms WHERE id = $1', [formId]);
+        if (!target.rowCount || target.rows[0].status !== 'pending') throw new Error('form is no longer pending');
+      }
+      if (kind === 'meeting') {
+        // Serialize suggestion creation and reject any suggestion that would
+        // overlap another pending suggestion for the same participant.
+        await client.query("SELECT pg_advisory_xact_lock(hashtext('ayadvi_ai_meeting_suggestions'))");
+        const meeting = await client.query(`
+          SELECT student_id, advisor_id, professor_id FROM appointments WHERE id = $1
+        `, [appointmentId]);
+        if (!meeting.rowCount) throw new Error('meeting not found');
+        const current = meeting.rows[0];
+        const target = await client.query('SELECT status FROM appointments WHERE id = $1', [appointmentId]);
+        if (!target.rowCount || target.rows[0].status !== 'requested') throw new Error('meeting is no longer pending');
+        const parties = new Set([
+          `student:${current.student_id}`,
+          current.advisor_id ? `advisor:${current.advisor_id}` : null,
+          current.professor_id ? `professor:${current.professor_id}` : null,
+        ].filter(Boolean));
+        const stamp = new Date(`${payload.date}T${payload.time}:00Z`).toISOString();
+        const scheduled = await client.query(`
+          SELECT student_id, advisor_id, professor_id FROM appointments
+          WHERE status IN ('scheduled','booked') AND start_at = $1
+        `, [stamp]);
+        for (const row of scheduled.rows) {
+          const otherParties = new Set([
+            `student:${row.student_id}`,
+            row.advisor_id ? `advisor:${row.advisor_id}` : null,
+            row.professor_id ? `professor:${row.professor_id}` : null,
+          ].filter(Boolean));
+          if ([...parties].some((party) => otherParties.has(party))) {
+            throw new Error('suggested slot conflicts with an existing meeting');
+          }
+        }
+        const pending = await client.query(`
+          SELECT ai.payload_json, ap.student_id, ap.advisor_id, ap.professor_id
+          FROM ai_suggestions ai
+          JOIN appointments ap ON ap.id = ai.appointment_id
+          WHERE ai.kind = 'meeting' AND ai.status = 'pending'
+        `);
+        for (const row of pending.rows) {
+          const other = row.payload_json || {};
+          if (other.date !== payload.date || other.time !== payload.time) continue;
+          const otherParties = new Set([
+            `student:${row.student_id}`,
+            row.advisor_id ? `advisor:${row.advisor_id}` : null,
+            row.professor_id ? `professor:${row.professor_id}` : null,
+          ].filter(Boolean));
+          if ([...parties].some((party) => otherParties.has(party))) {
+            throw new Error('suggested slot conflicts with another pending suggestion');
+          }
+        }
+      }
+      const inserted = await client.query(`
+        INSERT INTO ai_suggestions (
+          kind, form_id, appointment_id, advisor_id, student_id, action,
+          payload_json, reasoning, model, profile_version, cold_start
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        ON CONFLICT DO NOTHING
+        RETURNING id
+      `, [
+        kind, formId, appointmentId, String(req.body.advisor_id || ''),
+        req.body.student_id || null, action, JSON.stringify(payload),
+        String(req.body.reasoning || '').slice(0, 2000),
+        String(req.body.model || '').slice(0, 100), req.body.profile_version || null,
+        Boolean(req.body.cold_start)
+      ]);
+      return inserted.rows[0]?.id || null;
+    });
+    return res.json({ status: 'accepted', suggestion_id: suggestionId });
+  } catch (error) {
+    return res.status(409).json({ status: 'failed', message: error.message });
+  }
+});
+
+app.get('/api/suggestions', requireDashboardKey, async (req, res) => {
+  const rows = await many(`
+    SELECT ai.*, f.type AS form_type_value, s.student_no, u.display_name AS student_name,
+           ap.meeting_type, ap.preferred_date, ap.preferred_time
+    FROM ai_suggestions ai
+    LEFT JOIN forms f ON f.id = ai.form_id
+    LEFT JOIN appointments ap ON ap.id = ai.appointment_id
+    LEFT JOIN students s ON s.id = ai.student_id
+    LEFT JOIN users u ON u.id = s.user_id
+    WHERE ai.status = 'pending'
+    ORDER BY ai.created_at DESC
+    LIMIT 100
+  `);
+  res.json({ suggestions: rows });
+});
+
+app.post('/api/suggestions/:id/approve', requireDashboardKey, async (req, res) => {
+  const id = Number(req.params.id);
+  const suggestion = await one("SELECT * FROM ai_suggestions WHERE id = $1 AND status = 'pending'", [id]);
+  if (!suggestion) return res.status(404).json({ status: 'failed', message: 'suggestion not found or already decided' });
+  const payload = asObject(suggestion.payload_json, {});
+  const advisor = Number(suggestion.advisor_id)
+    ? await one('SELECT user_id FROM advisors WHERE id = $1', [Number(suggestion.advisor_id)])
+    : null;
+  const actorId = advisor?.user_id || 1;
+
+  if (suggestion.kind === 'form') {
+    const form = await one(`
+      SELECT f.*, s.cumulative_gpa::float8 AS cumulative_gpa, s.standing
+      FROM forms f JOIN students s ON s.id = f.student_id
+      WHERE f.id = $1
+    `, [suggestion.form_id]);
+    if (!form || form.status !== 'pending') {
+      await query("UPDATE ai_suggestions SET status='superseded', decided_at=NOW() WHERE id=$1", [suggestion.id]);
+      return res.status(409).json({ status: 'failed', message: 'form is no longer pending' });
+    }
+    const action = suggestion.action === 'accept' ? 'accept' : 'reject';
+    const reason = String(payload.reason || suggestion.reasoning || 'Suggestion approved during review.').slice(0, 500);
+    await tx(async (client) => {
+      await client.query(`
+        UPDATE forms SET status = $1, decision = $2, decided_by = $3, decided_at = NOW(), reason = $4
+        WHERE id = $5 AND status = 'pending'
+      `, [action === 'accept' ? 'approved' : 'rejected', action, actorId, reason, form.id]);
+      await insertDecision(client, {
+        formId: form.id, actorId, advisorId: suggestion.advisor_id,
+        action, reason, form, aiSuggestionId: suggestion.id
+      });
+      await client.query("UPDATE ai_suggestions SET status='approved', decided_at=NOW(), decided_by=$1 WHERE id=$2", [actorId, suggestion.id]);
+      await audit(actorId, 'ai_suggestion_approved', 'form', form.id, { suggestion_id: suggestion.id }, req.ip, client);
+    });
+    return res.json({ status: 'accepted', message: 'accepted and data stored' });
+  }
+
+  if (suggestion.kind === 'meeting') {
+    const meeting = await one("SELECT * FROM appointments WHERE id = $1 AND status = 'requested'", [suggestion.appointment_id]);
+    if (!meeting) {
+      await query("UPDATE ai_suggestions SET status='superseded', decided_at=NOW() WHERE id=$1", [suggestion.id]);
+      return res.status(409).json({ status: 'failed', message: 'meeting is no longer pending' });
+    }
+    const date = String(payload.date || '').slice(0, 10);
+    const time = String(payload.time || '');
+    const staffType = meeting.meeting_type === 'professor' ? 'professor' : 'advisor';
+    const staffId = staffType === 'professor' ? meeting.professor_id : meeting.advisor_id;
+    const slots = await availableSlots({ date, studentId: meeting.student_id, staffType, staffId, advisorId: meeting.meeting_type === 'professor' ? meeting.advisor_id : null });
+    if (!slots.includes(time)) return res.status(409).json({ status: 'failed', message: 'suggested slot is no longer available' });
+    const start = new Date(`${date}T${time}:00Z`);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    await tx(async (client) => {
+      await client.query(`
+        UPDATE appointments SET status='scheduled', start_at=$1, end_at=$2,
+          scheduled_by=$3, agent_reasoning=$4
+        WHERE id=$5 AND status='requested'
+      `, [start.toISOString(), end.toISOString(), actorId, suggestion.reasoning || null, meeting.id]);
+      await client.query("INSERT INTO messages (student_id, advisor_id, sender_role, body) VALUES ($1,$2,'advisor',$3)",
+        [meeting.student_id, meeting.advisor_id, `Your meeting is scheduled for ${date} at ${time}.`]);
+      await client.query("UPDATE ai_suggestions SET status='approved', decided_at=NOW(), decided_by=$1 WHERE id=$2", [actorId, suggestion.id]);
+      await audit(actorId, 'ai_suggestion_approved', 'appointment', meeting.id, { suggestion_id: suggestion.id, date, time }, req.ip, client);
+    });
+    await supersedeMeetingSuggestions(meeting.id, suggestion.id);
+    return res.json({ status: 'accepted', message: 'accepted and data stored' });
+  }
+
+  return res.status(400).json({ status: 'failed', message: 'unsupported suggestion' });
+});
+
+app.post('/api/suggestions/:id/reject', requireDashboardKey, async (req, res) => {
+  const id = Number(req.params.id);
+  const suggestion = await one("SELECT * FROM ai_suggestions WHERE id = $1 AND status = 'pending'", [id]);
+  if (!suggestion) return res.status(404).json({ status: 'failed', message: 'suggestion not found or already decided' });
+  await query("UPDATE ai_suggestions SET status='rejected', decided_at=NOW(), decided_by=1 WHERE id=$1", [id]);
+  res.json({ status: 'rejected', suggestion_id: id });
 });
 
 app.get('/api/agent/v1/students', async (req, res) => {
@@ -1401,8 +1733,8 @@ app.get('/api/agent/v1/students/:id/capp', async (req, res) => {
 app.get('/api/agent/v1/cases', async (req, res) => {
   const rows = await many(`
     SELECT f.id, f.type, f.term, f.status, f.submitted_at, f.data_json,
-           s.id AS student_id, s.student_no, u.display_name AS student_name,
-           f.assigned_advisor_id
+           s.id AS student_id, s.student_no, s.cumulative_gpa::float8 AS cumulative_gpa,
+           s.standing, u.display_name AS student_name, f.assigned_advisor_id
     FROM forms f
     JOIN students s ON s.id = f.student_id
     JOIN users u ON u.id = s.user_id
@@ -1494,6 +1826,55 @@ app.get('/api/agent/v1/students/:id/meetings', async (req, res) => {
   res.json({ meetings: rows });
 });
 
+app.get('/api/agent/v1/students/:id/meetings/availability', async (req, res) => {
+  const student = await one('SELECT * FROM students WHERE id = $1', [Number(req.params.id)]);
+  if (!student) return res.status(404).json({ error: 'student not found' });
+
+  let meetingType = String(req.query.meeting_type || 'advisor') === 'professor' ? 'professor' : 'advisor';
+  let professorId = Number(req.query.professor_id) || null;
+  if (meetingType === 'professor' && !professorId) {
+    const professor = await one(`
+      SELECT sec.professor_id
+      FROM enrollments e
+      JOIN sections sec ON sec.id = e.section_id
+      WHERE e.student_id = $1 AND e.status = 'enrolled' AND sec.professor_id IS NOT NULL
+      ORDER BY CASE WHEN sec.term = '2026-Fall' THEN 0 ELSE 1 END, sec.id
+      LIMIT 1
+    `, [student.id]);
+    professorId = professor?.professor_id || null;
+    if (!professorId) meetingType = 'advisor';
+  }
+
+  const days = Math.min(5, Math.max(1, Number(req.query.days) || 3));
+  const requestedDate = String(req.query.date || nextWeekday()).slice(0, 10);
+  const cursor = new Date(`${requestedDate}T00:00:00Z`);
+  if (Number.isNaN(cursor.getTime())) return res.status(400).json({ error: 'invalid date' });
+
+  const options = [];
+  for (let checked = 0; checked < days * 2 && options.length < 3; checked += 1) {
+    if (![0, 6].includes(cursor.getUTCDay())) {
+      const date = cursor.toISOString().slice(0, 10);
+      const staffId = meetingType === 'professor' ? professorId : student.advisor_id;
+      const slots = await availableSlots({
+        date,
+        studentId: student.id,
+        staffType: meetingType,
+        staffId,
+        advisorId: meetingType === 'professor' ? student.advisor_id : null,
+      });
+      if (slots.length) options.push({ date, slots });
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  res.json({
+    meeting_type: meetingType,
+    staff_type: meetingType,
+    staff_id: meetingType === 'professor' ? professorId : student.advisor_id,
+    options,
+  });
+});
+
 
 app.get('/api/agent/v1/advisors', async (req, res) => {
   const rows = await many(`
@@ -1522,7 +1903,7 @@ app.post('/api/agent/v1/meetings/:id/reject', async (req, res) => {
     SET status = 'rejected', start_at = NULL, end_at = NULL, scheduled_by = $1, reason = $2
     WHERE id = $3
   `, [Number(grant.actor_id), String(req.body.reason || 'No available slot.').slice(0, 500), id]);
-  await audit(Number(grant.actor_id), 'meeting_rejected', 'appointment', id, { source: 'agent_grant' }, req.ip);
+  await audit(Number(grant.actor_id), 'meeting_rejected', 'appointment', id, { source: 'api_grant' }, req.ip);
   return res.json({ status: 'accepted', message: 'accepted and data stored' });
 });
 
@@ -1571,7 +1952,7 @@ app.post('/api/agent/v1/meetings/:id/schedule', async (req, res) => {
       `, [start.toISOString(), end.toISOString(), Number(grant.actor_id), id, reasoning || null]);
       await client.query(`INSERT INTO messages (student_id, advisor_id, sender_role, body) VALUES ($1, $2, 'advisor', $3)`,
         [meeting.student_id, advisor.id, `Your meeting is scheduled for ${date} at ${time}.`]);
-      await audit(Number(grant.actor_id), 'meeting_scheduled', 'appointment', id, { date, time, reason: reasoning, source: 'agent_grant' }, req.ip, client);
+      await audit(Number(grant.actor_id), 'meeting_scheduled', 'appointment', id, { date, time, reason: reasoning, source: 'api_grant' }, req.ip, client);
     });
   } catch (error) {
     if (error.code === '23505') {
@@ -1610,7 +1991,7 @@ app.post('/api/agent/v1/meetings/professor', async (req, res) => {
 
   await query(`INSERT INTO messages (student_id, advisor_id, sender_role, body) VALUES ($1, $2, 'advisor', $3)`,
     [studentId, advisor.id, `Your meeting with a professor is scheduled for ${date} at ${time}.`]);
-  await audit(Number(grant.actor_id), 'meeting_scheduled', 'appointment', row.id, { date, time, type: 'professor', source: 'agent_grant' }, req.ip);
+  await audit(Number(grant.actor_id), 'meeting_scheduled', 'appointment', row.id, { date, time, type: 'professor', source: 'api_grant' }, req.ip);
   return res.json({ status: 'accepted', message: 'accepted and data stored', meeting_id: row.id });
 });
 
@@ -1675,7 +2056,7 @@ app.post('/api/agent/v1/students/:id/meetings', async (req, res) => {
   ]);
 
   await audit(Number(grant.actor_id), 'meeting_requested', 'appointment', row.id,
-    { source: source || 'agent_grant', meeting_type: meetingType }, req.ip);
+    { source: source || 'api_grant', meeting_type: meetingType }, req.ip);
   return res.json({ status: 'accepted', message: 'accepted and data stored', meeting_id: row.id });
 });
 
@@ -1720,7 +2101,7 @@ app.post('/api/agent/v1/students/:id/messages', async (req, res) => {
   }
 
   await audit(Number(grant.actor_id), 'message_sent', 'student', studentId,
-    { source: 'agent_grant', reply_to_message_id: Number.isInteger(replyTo) ? replyTo : null }, req.ip);
+    { source: 'api_grant', reply_to_message_id: Number.isInteger(replyTo) ? replyTo : null }, req.ip);
   return res.json({ status: 'accepted', message: 'accepted and data stored', message_id: row.id });
 });
 
@@ -1754,7 +2135,7 @@ app.post('/api/agent/v1/students/:id/messages/reply', async (req, res) => {
   }
 
   await audit(student.advisor_user_id, 'message_sent', 'student', studentId,
-    { source: 'agent_reply', reply_to_message_id: Number.isInteger(replyTo) ? replyTo : null }, req.ip);
+    { source: 'api_reply', reply_to_message_id: Number.isInteger(replyTo) ? replyTo : null }, req.ip);
   return res.json({ status: 'accepted', message: 'accepted and data stored', message_id: row.id });
 });
 
@@ -1776,11 +2157,11 @@ app.post('/api/agent/v1/students/:id/forms', async (req, res) => {
   const data = { ...req.body, type: undefined };
   delete data.type;
   const row = await one(`
-    INSERT INTO forms (student_id, type, term, status, submitted_at, data_json, assigned_advisor_id, filled_by_agent)
-    VALUES ($1, $2, '2026-Fall', 'pending', NOW(), $3, $4, TRUE) RETURNING id
+    INSERT INTO forms (student_id, type, term, status, submitted_at, data_json, assigned_advisor_id)
+    VALUES ($1, $2, '2026-Fall', 'pending', NOW(), $3, $4) RETURNING id
   `, [studentId, type, JSON.stringify(data), student.advisor_id]);
 
-  await audit(Number(grant.actor_id), 'form_submitted', 'form', row.id, { type, source: 'agent_grant' }, req.ip);
+  await audit(Number(grant.actor_id), 'form_submitted', 'form', row.id, { type, source: 'api_grant' }, req.ip);
   return res.json({ status: 'accepted', message: 'accepted and data stored', form_id: row.id });
 });
 
@@ -1812,7 +2193,11 @@ app.post('/api/agent/v1/cases/:id/decision', async (req, res) => {
   }
 
   const advisor = await one('SELECT * FROM advisors WHERE user_id = $1', [Number(grant.actor_id)]);
-  const form = await one('SELECT * FROM forms WHERE id = $1 AND assigned_advisor_id = $2', [id, advisor?.id]);
+  const form = await one(`
+    SELECT f.*, s.cumulative_gpa::float8 AS cumulative_gpa, s.standing
+    FROM forms f JOIN students s ON s.id = f.student_id
+    WHERE f.id = $1 AND f.assigned_advisor_id = $2
+  `, [id, advisor?.id]);
   if (!form || form.status !== 'pending') {
     await audit(Number(grant.actor_id), 'decision_failed', 'form', id, { action, reason: 'not_found_or_not_pending' }, req.ip);
     return res.json({ status: 'failed', message: 'failed and data not stored' });
@@ -1827,10 +2212,10 @@ app.post('/api/agent/v1/cases/:id/decision', async (req, res) => {
 
       if (updated.rowCount !== 1) throw new Error('case state changed');
 
-      await client.query(`
-        INSERT INTO decisions (form_id, actor_id, action, reason, agent_recommendation, created_at)
-        VALUES ($1, $2, $3, $4, NULL, NOW())
-      `, [id, Number(grant.actor_id), action, reason]);
+      await insertDecision(client, {
+        formId: id, actorId: Number(grant.actor_id), advisorId: advisor.id,
+        action, reason, form
+      });
 
       await audit(Number(grant.actor_id), action === 'accept' ? 'form_approved' : 'form_rejected', 'form', id, { reason }, req.ip, client);
     });

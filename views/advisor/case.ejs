@@ -3,81 +3,93 @@
 
 <div class="page-head">
   <div>
-    <h1>Case #<%= form.id %></h1>
-    <p class="muted"><%= form.type.replaceAll('_', ' ') %> · <%= form.term %> · submitted <%= fmtDate(form.submitted_at) %></p>
+    <h1>Case <span class="mono" style="font-size: inherit">#<%= form.id %></span></h1>
+    <p><%= form.type.replaceAll('_', ' ') %> · <span class="mono"><%= form.term %></span> · submitted <span class="mono"><%= fmtDate(form.submitted_at) %></span></p>
   </div>
   <div class="actions">
-    <% if (form.filled_by_agent) { %><span class="badge warn">filled by agent</span><% } %>
     <span id="live-case-status" data-live><span class="badge <%= form.status === 'approved' ? 'ok' : form.status === 'rejected' ? 'bad' : 'warn' %>"><%= form.status %></span></span>
   </div>
 </div>
 
 <div class="grid two">
-  <section class="card">
-    <h2>Student</h2>
-    <dl class="facts">
-      <dt>Name</dt><dd><%= form.student_name %></dd>
-      <dt>Number</dt><dd><%= form.student_no %></dd>
-      <dt>Program</dt><dd><%= form.program %></dd>
-      <dt>Catalog</dt><dd><%= form.catalog_year %></dd>
-      <dt>Campus</dt><dd><%= form.campus %></dd>
-      <dt>GPA</dt><dd><%= Number(form.cumulative_gpa).toFixed(2) %></dd>
-      <dt>Standing</dt><dd><%= form.standing %></dd>
-    </dl>
+  <section class="card" aria-labelledby="student-title">
+    <div class="card-head"><h2 id="student-title">Student</h2></div>
+    <div class="card-body">
+      <dl class="facts">
+        <dt>Name</dt><dd><%= form.student_name %></dd>
+        <dt>Number</dt><dd class="mono"><%= form.student_no %></dd>
+        <dt>Program</dt><dd><%= form.program %></dd>
+        <dt>Catalog</dt><dd class="mono"><%= form.catalog_year %></dd>
+        <dt>Campus</dt><dd><%= form.campus %></dd>
+        <dt>GPA</dt><dd class="mono"><%= Number(form.cumulative_gpa).toFixed(2) %></dd>
+        <dt>Standing</dt><dd><span class="badge <%= form.standing === 'good' ? 'ok' : 'warn' %>"><%= form.standing %></span></dd>
+      </dl>
+    </div>
   </section>
 
-  <section class="card">
-    <h2>Request</h2>
-    <dl class="facts">
-      <% Object.entries(data).forEach(function ([key, value]) { %>
-        <dt><%= key %></dt><dd><%= value %></dd>
-      <% }) %>
-    </dl>
+  <section class="card" aria-labelledby="request-title">
+    <div class="card-head"><h2 id="request-title">Request</h2></div>
+    <div class="card-body">
+      <dl class="facts">
+        <% Object.entries(data).forEach(function ([key, value]) { %>
+          <dt><%= key.replaceAll('_', ' ') %></dt><dd><%= value %></dd>
+        <% }) %>
+      </dl>
+    </div>
   </section>
 </div>
 
-<section class="card">
-  <h2>Degree progress</h2>
+<section class="card" aria-labelledby="progress-title">
+  <div class="card-head">
+    <h2 id="progress-title">Degree progress</h2>
+    <% if (capp) { %><span class="meta"><span class="mono"><%= capp.total_earned %> / <%= capp.total_required %></span> credits</span><% } %>
+  </div>
   <% if (capp) { %>
-    <div class="progress"><div class="progress-bar" style="width:<%= Math.min(100, Math.round((capp.total_earned / capp.total_required) * 100)) %>%"></div></div>
-    <p class="muted"><%= capp.total_earned %> / <%= capp.total_required %> credits</p>
-    <div class="grid two">
+    <div class="req-grid">
       <% capp.groups.forEach(function (g) { %>
-        <div class="requirement">
-          <div class="requirement-row"><span><%= g.name %></span><span><%= g.applied %> / <%= g.required %></span></div>
-          <div class="progress small"><div class="progress-bar" style="width:<%= Math.min(100, Math.round((g.applied / g.required) * 100)) %>%"></div></div>
+        <% const pct = Math.min(100, Math.round((g.applied / g.required) * 100)); %>
+        <div class="req-tile">
+          <div class="requirement-row"><span class="name"><%= g.name %></span><span class="mono"><%= g.applied %> / <%= g.required %></span></div>
+          <div class="progress"><div class="progress-bar" style="width:<%= pct %>%"></div></div>
+          <div class="req-note"><%= pct %>%</div>
         </div>
       <% }) %>
     </div>
-  <% } else { %><p class="muted">No CAPP evaluation.</p><% } %>
+  <% } else { %><div class="card-body muted">No CAPP evaluation.</div><% } %>
 </section>
 
-<section class="card" id="live-case-decision" data-live>
-  <h2>Decision</h2>
+<section class="card" id="live-case-decision" data-live aria-labelledby="decision-title">
+  <div class="card-head"><h2 id="decision-title">Decision</h2></div>
   <% if (form.status === 'pending') { %>
-    <p class="muted">Manual decisions are recorded here without a password. The agent/MCP path requires a signed grant.</p>
-    <div class="stack">
+    <div class="card-body stack">
+      <p class="muted">Manual decisions are recorded here without a password. API decisions require a signed grant.</p>
       <label>Reason <textarea id="decision-reason" rows="2" placeholder="Reason or short note"></textarea></label>
       <div class="actions">
-        <button class="btn accept" onclick="decideCase('accept')">Accept</button>
-        <button class="btn reject" onclick="decideCase('reject')">Reject</button>
+        <button class="btn accept" type="button" onclick="decideCase('accept')">Accept</button>
+        <button class="btn reject" type="button" onclick="decideCase('reject')">Reject</button>
+        <div id="decision-result" class="form-result"></div>
       </div>
-      <div id="decision-result" class="muted"></div>
     </div>
   <% } else { %>
-    <p class="muted">This case was already <%= form.status %>.</p>
+    <div class="card-body"><p class="muted" style="margin: 0">This case was already <%= form.status %>.</p></div>
   <% } %>
 
   <% if (decisions.length) { %>
-    <h3>Decision history</h3>
-    <table>
-      <thead><tr><th>Action</th><th>Reason</th><th>When</th></tr></thead>
-      <tbody>
-        <% decisions.forEach(function (d) { %>
-          <tr><td><%= d.action %></td><td><%= d.reason || '—' %></td><td><%= fmtDate(d.created_at) %></td></tr>
-        <% }) %>
-      </tbody>
-    </table>
+    <div class="card-section" style="padding-bottom: 0"><h3>Decision history</h3></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Action</th><th>Reason</th><th>When</th></tr></thead>
+        <tbody>
+          <% decisions.forEach(function (d) { %>
+            <tr>
+              <td><span class="badge <%= d.action === 'accept' ? 'ok' : d.action === 'reject' ? 'bad' : '' %>"><%= d.action %></span></td>
+              <td class="muted"><%= d.reason || '—' %></td>
+              <td class="mono nowrap"><%= fmtDate(d.created_at) %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
   <% } %>
 </section>
 

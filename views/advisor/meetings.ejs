@@ -4,119 +4,120 @@
 <div class="page-head">
   <div>
     <h1>Meetings</h1>
-    <p class="muted">Schedule student requests and student–professor meetings.</p>
-  </div>
-  <div class="actions">
-    <form method="post" action="/advisor/reset-meetings" onsubmit="return confirm('Reset every meeting case to requested? Current meeting outcomes will be cleared.');">
-      <button class="btn primary" type="submit">Reset meetings</button>
-    </form>
-    <form method="post" action="/advisor/apply-true-meetings" onsubmit="return confirm('Set every meeting case to true-meeting-answers.json?');">
-      <button class="btn" type="submit">Apply true meetings</button>
-    </form>
-    <button class="btn" type="button" id="check-meetings">Check meetings</button>
-    <a class="btn" href="http://localhost:3002" target="_blank" rel="noreferrer">Agent dashboard</a>
+    <p>Schedule student requests and student–professor meetings.</p>
   </div>
 </div>
 
 <% if (reset) { %>
-  <div class="notice">All 24 meeting cases are back to <strong>requested</strong>. The scheduling agent polls every 0.5 seconds and will schedule or reject them.</div>
+  <div class="notice">A random 50% of meeting cases were reset to <strong>requested</strong>; the other 50% kept their scheduled outcomes.</div>
 <% } %>
 <% if (applied) { %>
   <div class="notice">All meeting cases were restored from <code>true-meeting-answers.json</code>. Check meetings should show 24/24.</div>
 <% } %>
 <% if (error === 'conflict') { %>
-  <div class="notice">That time conflicts with the student's or the staff member's schedule. Pick another slot.</div>
+  <div class="notice warn">That time conflicts with the student's or the staff member's schedule. Pick another slot.</div>
 <% } %>
 
-<section class="card">
-  <h2>Agent scheduling</h2>
-  <p class="muted">
-    The scheduling agent reads requested meetings from the agent API, checks availability,
-    then schedules or rejects each case with a short-lived grant. Reset meetings to let it
-    run the full 24-case meeting benchmark again. Applied outcomes also appear in the
-    latest decisions below and on the agent dashboard.
-  </p>
-</section>
-
-<section class="card">
-  <h2>Meeting case summary</h2>
-  <div class="chips" id="live-meeting-counts" data-live>
-    <% counts.forEach(function (c) { %>
-      <span class="chip"><%= c.status %> <strong><%= c.n %></strong></span>
-    <% }) %>
-    <% if (!counts.length) { %><span class="chip">no cases</span><% } %>
+<section class="card" aria-label="Meeting controls">
+  <div class="toolbar">
+    <div class="actions">
+      <form method="post" action="/advisor/reset-meetings" onsubmit="return confirm('Reset every meeting case to requested? Current meeting outcomes will be cleared.');">
+        <button class="btn primary" type="submit">Reset meetings</button>
+      </form>
+      <form method="post" action="/advisor/apply-true-meetings" onsubmit="return confirm('Set every meeting case to true-meeting-answers.json?');">
+        <button class="btn" type="submit">Apply true meetings</button>
+      </form>
+      <button class="btn mono" type="button" id="check-meetings">Check meetings</button>
+    </div>
+    <div class="stats" id="live-meeting-counts" data-live aria-label="Meeting case summary">
+      <% counts.forEach(function (c) { %>
+        <div class="stat">
+          <div class="stat-label"><%= c.status %></div>
+          <div class="stat-value <%= c.status === 'scheduled' ? 'ok' : c.status === 'rejected' ? 'bad' : c.status === 'requested' ? 'warn' : '' %>"><%= c.n %></div>
+        </div>
+      <% }) %>
+      <% if (!counts.length) { %><div class="stat"><div class="stat-label">Cases</div><div class="stat-value">0</div></div><% } %>
+    </div>
+  </div>
+  <div class="card-foot">
+    <p>Requested meetings can be scheduled or rejected here. Applied outcomes appear in the latest decisions below.</p>
   </div>
 </section>
 
-<section class="card">
-  <h2>Pending student requests</h2>
-  <table>
-    <thead><tr><th>Student</th><th>Reason</th><th>Preferred date</th><th>Requested</th><th></th></tr></thead>
-    <tbody id="live-meeting-pending" data-live>
-      <% pending.forEach(function (m) { %>
-        <tr>
-          <td><strong><%= m.student_name %></strong><br><span class="muted"><%= m.student_no %></span></td>
-          <td class="muted"><%= m.reason || '—' %></td>
-          <td><%= m.preferred_date || '—' %></td>
-          <td><%= fmtDate(m.requested_at) %></td>
-          <td>
-            <div class="actions">
-              <a class="btn small" href="/advisor/meetings/<%= m.id %>">Schedule</a>
-              <form method="post" action="/advisor/meetings/<%= m.id %>/reject" onsubmit="return confirm('Reject this meeting request?');">
-                <button class="btn small reject" type="submit">Reject</button>
-              </form>
-            </div>
-          </td>
-        </tr>
-      <% }) %>
-      <% if (!pending.length) { %><tr><td colspan="5" class="muted">No pending requests.</td></tr><% } %>
-    </tbody>
-  </table>
+<section class="card" aria-labelledby="pending-title">
+  <div class="card-head"><h2 id="pending-title">Pending student requests</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Student</th><th>Reason</th><th>Preferred date</th><th>Requested</th><th class="col-action"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody id="live-meeting-pending" data-live>
+        <% pending.forEach(function (m) { %>
+          <tr>
+            <td class="nowrap"><span class="cell-main"><%= m.student_name %></span><span class="cell-sub mono"><%= m.student_no %></span></td>
+            <td class="muted"><%= m.reason || '—' %></td>
+            <td class="mono nowrap"><%= m.preferred_date || '—' %></td>
+            <td class="mono nowrap"><%= fmtDate(m.requested_at) %></td>
+            <td class="col-action">
+              <div class="actions">
+                <a class="btn small primary" href="/advisor/meetings/<%= m.id %>">Schedule</a>
+                <form method="post" action="/advisor/meetings/<%= m.id %>/reject" onsubmit="return confirm('Reject this meeting request?');">
+                  <button class="btn small reject" type="submit">Reject</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (!pending.length) { %><tr><td colspan="5" class="empty">No pending requests.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Upcoming meetings</h2>
-  <table>
-    <thead><tr><th>Student</th><th>With</th><th>When</th><th>Reason</th><th>Status</th></tr></thead>
-    <tbody id="live-meeting-upcoming" data-live>
-      <% upcoming.forEach(function (m) { %>
-        <tr>
-          <td><strong><%= m.student_name %></strong><br><span class="muted"><%= m.student_no %></span></td>
-          <td><%= m.meeting_type === 'professor' ? (m.professor_name || 'Professor') : 'Advisor' %></td>
-          <td><%= fmtDate(m.start_at) %> · <%= fmtTime(m.start_at) %></td>
-          <td class="muted"><%= m.reason || '—' %></td>
-          <td><span class="badge ok"><%= m.status %></span></td>
-        </tr>
-      <% }) %>
-      <% if (!upcoming.length) { %><tr><td colspan="5" class="muted">No scheduled meetings.</td></tr><% } %>
-    </tbody>
-  </table>
+<section class="card" aria-labelledby="upcoming-title">
+  <div class="card-head"><h2 id="upcoming-title">Upcoming meetings</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Student</th><th>With</th><th>When</th><th>Reason</th><th>Status</th></tr></thead>
+      <tbody id="live-meeting-upcoming" data-live>
+        <% upcoming.forEach(function (m) { %>
+          <tr>
+            <td class="nowrap"><span class="cell-main"><%= m.student_name %></span><span class="cell-sub mono"><%= m.student_no %></span></td>
+            <td class="nowrap"><%= m.meeting_type === 'professor' ? (m.professor_name || 'Professor') : 'Advisor' %></td>
+            <td class="mono nowrap"><%= fmtDate(m.start_at) %> · <%= fmtTime(m.start_at) %></td>
+            <td class="muted"><%= m.reason || '—' %></td>
+            <td><span class="badge <%= m.status === 'booked' ? 'warn' : 'ok' %>"><%= m.status %></span></td>
+          </tr>
+        <% }) %>
+        <% if (!upcoming.length) { %><tr><td colspan="5" class="empty">No scheduled meetings.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Latest meeting decisions</h2>
-  <table>
-    <thead><tr><th>Case</th><th>Student</th><th>With</th><th>When</th><th>Status</th><th>Reason</th></tr></thead>
-    <tbody id="live-meeting-history" data-live>
-      <% history.forEach(function (m) { %>
-        <tr>
-          <td><%= m.case_code %></td>
-          <td><%= m.student_name %><br><span class="muted"><%= m.student_no %></span></td>
-          <td><%= m.meeting_type === 'professor' ? (m.professor_name || 'Professor') : 'Advisor' %></td>
-          <td><%= m.start_at ? (fmtDate(m.start_at) + ' · ' + fmtTime(m.start_at)) : '—' %></td>
-          <td><span class="badge <%= m.status === 'rejected' ? 'bad' : 'ok' %>"><%= m.status %></span></td>
-          <td class="muted"><%= m.agent_reasoning || m.reason || '—' %></td>
-        </tr>
-      <% }) %>
-      <% if (!history.length) { %><tr><td colspan="6" class="muted">No meeting decisions yet.</td></tr><% } %>
-    </tbody>
-  </table>
+<section class="card" aria-labelledby="history-title">
+  <div class="card-head"><h2 id="history-title">Latest meeting decisions</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Case</th><th>Student</th><th>With</th><th>When</th><th>Status</th><th>Reason</th></tr></thead>
+      <tbody id="live-meeting-history" data-live>
+        <% history.forEach(function (m) { %>
+          <tr>
+            <td class="mono"><strong><%= m.case_code %></strong></td>
+            <td class="nowrap"><span class="cell-main"><%= m.student_name %></span><span class="cell-sub mono"><%= m.student_no %></span></td>
+            <td class="nowrap"><%= m.meeting_type === 'professor' ? (m.professor_name || 'Professor') : 'Advisor' %></td>
+            <td class="mono nowrap"><%= m.start_at ? (fmtDate(m.start_at) + ' · ' + fmtTime(m.start_at)) : '—' %></td>
+            <td><span class="badge <%= m.status === 'rejected' ? 'bad' : m.status === 'booked' ? 'warn' : 'ok' %>"><%= m.status %></span></td>
+            <td class="muted"><%= m.reason || '—' %></td>
+          </tr>
+        <% }) %>
+        <% if (!history.length) { %><tr><td colspan="6" class="empty">No meeting decisions yet.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Schedule a student–professor meeting</h2>
-  <p class="muted">The portal checks the student's classes and the professor's classes before saving.</p>
-  <form method="post" action="/advisor/meetings/professor" class="stack">
+<section class="card" aria-labelledby="schedule-title">
+  <div class="card-head"><h2 id="schedule-title">Schedule a student–professor meeting</h2><span class="meta">The portal checks the student's classes and the professor's classes before saving.</span></div>
+  <form method="post" action="/advisor/meetings/professor" class="card-body form-grid">
     <label>Student
       <select name="student_id" required>
         <% students.forEach(function (s) { %>
@@ -139,10 +140,10 @@
         <% times.forEach(function (t) { %><option value="<%= t %>"><%= t %></option><% }) %>
       </select>
     </label>
-    <label>Reason
+    <label class="full">Reason
       <input name="reason" placeholder="Optional reason">
     </label>
-    <button class="btn primary" type="submit">Schedule meeting</button>
+    <div><button class="btn primary" type="submit">Schedule meeting</button></div>
   </form>
 </section>
 

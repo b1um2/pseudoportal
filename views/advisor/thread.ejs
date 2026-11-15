@@ -4,29 +4,28 @@
 <div class="page-head">
   <div>
     <h1><%= student.student_name %></h1>
-    <p class="muted"><%= student.student_no %> · <%= student.student_email || 'no email' %></p>
+    <p><span class="mono"><%= student.student_no %></span> · <%= student.student_email || 'no email' %></p>
   </div>
   <a class="btn" href="/advisor/messages">All messages</a>
 </div>
 
-<section class="card">
-  <h2>Conversation</h2>
-  <p class="muted">Showing the latest 5 messages.</p>
-  <div id="live-thread" data-live>
-    <% if (!messages.length) { %><p class="muted">No messages yet. Start the conversation below.</p><% } %>
+<section class="card" aria-labelledby="conversation-title">
+  <div class="card-head"><h2 id="conversation-title">Conversation</h2><span class="meta">Latest 5 messages</span></div>
+  <div class="thread" id="live-thread" data-live>
+    <% if (!messages.length) { %><p class="thread-empty">No messages yet. Start the conversation below.</p><% } %>
     <% messages.forEach(function (m) { %>
       <div class="message <%= m.sender_role %>">
-        <div class="message-meta"><%= m.sender_role %> · <%= fmtDateTime(m.created_at) %></div>
-        <div><%= m.body %></div>
+        <div class="message-meta"><span class="message-role"><%= m.sender_role %></span><span class="mono"><%= fmtDateTime(m.created_at) %></span></div>
+        <div class="message-body"><%- m.body_html %></div>
       </div>
     <% }) %>
   </div>
 
-  <form method="post" action="/advisor/messages/<%= student.id %>" class="stack">
+  <form method="post" action="/advisor/messages/<%= student.id %>" class="card-section stack">
     <label>Reply
       <textarea name="body" rows="3" placeholder="Write a reply to the student" required></textarea>
     </label>
-    <button class="btn primary" type="submit">Send reply</button>
+    <div><button class="btn primary" type="submit">Send reply</button></div>
   </form>
 </section>
 

@@ -4,92 +4,100 @@
 <div class="page-head">
   <div>
     <h1>Advisor queue</h1>
-    <p class="muted"><%= advisor.department %> · <span id="live-pending-count" data-live><%= queue.length %> pending</span></p>
-  </div>
-  <div class="actions">
-    <form method="post" action="/advisor/reset-cases" onsubmit="return confirm('Reset the form queue to pending? Meetings will not be changed.');">
-      <button class="btn primary" type="submit">Reset queue</button>
-    </form>
-    <form method="post" action="/advisor/apply-true-answers" onsubmit="return confirm('Set every case to the true answers from true-answers.json?');">
-      <button class="btn" type="submit">Apply true answers</button>
-    </form>
-    <button class="btn" type="button" id="check-results">Check</button>
+    <p><%= advisor.department %> · <span id="live-pending-count" data-live><%= queue.length %> pending</span></p>
   </div>
 </div>
 
 <% if (reset) { %>
-  <div class="notice">All form cases are pending. Meeting cases were left unchanged; use <strong>Reset meetings</strong> on the Meetings page to reset those separately.</div>
+  <div class="notice">A random 50% of form cases were reset to pending. The other 50% kept their decisions. Meetings were left unchanged; use <strong>Reset meetings</strong> for those.</div>
 <% } %>
 <% if (applied) { %>
-  <div class="notice">All form and meeting cases were set to the true answers. Check should show 74/74.</div>
+  <div class="notice">All form cases were set to the true answers. Check forms should show 50/50.</div>
 <% } %>
 
-<section class="card">
-  <table>
-    <thead>
-      <tr><th>Student</th><th>Form</th><th>Term</th><th>Submitted</th><th>Status</th><th></th></tr>
-    </thead>
-    <tbody id="live-queue" data-live>
-      <% queue.forEach(function (f) { %>
-        <tr>
-          <td><strong><%= f.student_name %></strong><br><span class="muted"><%= f.student_no %> · <%= f.program %></span></td>
-          <td><%= f.type.replaceAll('_', ' ') %><% if (f.filled_by_agent) { %><br><span class="badge warn">filled by agent</span><% } %></td>
-          <td><%= f.term %></td>
-          <td><%= fmtDate(f.submitted_at) %></td>
-          <td><span class="badge warn"><%= f.status %></span></td>
-          <td><a class="btn small" href="/advisor/cases/<%= f.id %>">Open</a></td>
-        </tr>
-      <% }) %>
-      <% if (!queue.length) { %>
-        <tr><td colspan="6" class="muted">No pending cases.</td></tr>
-      <% } %>
-    </tbody>
-  </table>
-</section>
-
-<section class="card">
-  <h2>Status summary</h2>
-  <div class="chips" id="live-form-counts" data-live>
+<section class="card toolbar" aria-label="Queue controls">
+  <div class="actions">
+    <form method="post" action="/advisor/reset-cases" onsubmit="return confirm('Reset the form queue to pending? Meetings will not be changed.');">
+      <button class="btn primary" type="submit">Reset queue</button>
+    </form>
+    <form method="post" action="/advisor/apply-true-answers" onsubmit="return confirm('Set every form case to the true answers from true-answers.json?');">
+      <button class="btn" type="submit">Apply true forms</button>
+    </form>
+    <button class="btn mono" type="button" id="check-results">Check forms</button>
+  </div>
+  <div class="stats" id="live-form-counts" data-live aria-label="Status summary">
     <% counts.forEach(function (c) { %>
-      <span class="chip"><%= c.status %> <strong><%= c.n %></strong></span>
+      <div class="stat">
+        <div class="stat-label"><%= c.status %></div>
+        <div class="stat-value <%= c.status === 'approved' ? 'ok' : c.status === 'rejected' ? 'bad' : c.status === 'pending' ? 'warn' : '' %>"><%= c.n %></div>
+      </div>
     <% }) %>
   </div>
 </section>
 
-<section class="card">
-  <h2>Recent decisions</h2>
-  <table>
-    <thead><tr><th>Student</th><th>Form</th><th>Status</th><th>Reason</th><th></th></tr></thead>
-    <tbody id="live-form-history" data-live>
-      <% history.forEach(function (f) { %>
-        <tr>
-          <td><%= f.student_name %><br><span class="muted"><%= f.student_no %></span></td>
-          <td><%= f.type.replaceAll('_', ' ') %></td>
-          <td><span class="badge <%= f.status === 'approved' ? 'ok' : 'bad' %>"><%= f.status %></span></td>
-          <td class="muted"><%= f.reason || '—' %></td>
-          <td><a class="btn small" href="/advisor/cases/<%= f.id %>">Open</a></td>
-        </tr>
-      <% }) %>
-      <% if (!history.length) { %><tr><td colspan="5" class="muted">No decisions yet.</td></tr><% } %>
-    </tbody>
-  </table>
+<section class="card" aria-labelledby="pending-title">
+  <div class="card-head"><h2 id="pending-title">Pending cases</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Student</th><th>Form</th><th>Term</th><th>Submitted</th><th>Status</th><th class="col-action"><span class="sr-only">Action</span></th></tr>
+      </thead>
+      <tbody id="live-queue" data-live>
+        <% queue.forEach(function (f) { %>
+          <tr>
+            <td><span class="cell-main"><%= f.student_name %></span><span class="cell-sub"><span class="mono"><%= f.student_no %></span> · <%= f.program %></span></td>
+            <td><%= f.type.replaceAll('_', ' ') %></td>
+            <td class="mono nowrap"><%= f.term %></td>
+            <td class="mono nowrap"><%= fmtDate(f.submitted_at) %></td>
+            <td><span class="badge warn"><%= f.status %></span></td>
+            <td class="col-action"><a class="btn small" href="/advisor/cases/<%= f.id %>">Open</a></td>
+          </tr>
+        <% }) %>
+        <% if (!queue.length) { %>
+          <tr><td colspan="6" class="empty">No pending cases.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Real form templates</h2>
-  <p class="muted">Public forms used as schemas for the test cases.</p>
-  <table>
-    <thead><tr><th>Form</th><th>Type</th><th>Source</th></tr></thead>
-    <tbody>
-      <% templates.forEach(function (t) { %>
-        <tr>
-          <td><%= t.name %></td>
-          <td><%= t.type.replaceAll('_', ' ') %></td>
-          <td><a href="<%= t.source_url %>" target="_blank" rel="noreferrer">open</a></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+<section class="card" aria-labelledby="history-title">
+  <div class="card-head"><h2 id="history-title">Recent decisions</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Student</th><th>Form</th><th>Status</th><th>Reason</th><th class="col-action"><span class="sr-only">Action</span></th></tr></thead>
+      <tbody id="live-form-history" data-live>
+        <% history.forEach(function (f) { %>
+          <tr>
+            <td class="nowrap"><span class="cell-main"><%= f.student_name %></span><span class="cell-sub mono"><%= f.student_no %></span></td>
+            <td class="nowrap"><%= f.type.replaceAll('_', ' ') %></td>
+            <td><span class="badge <%= f.status === 'approved' ? 'ok' : 'bad' %>"><%= f.status %></span></td>
+            <td class="muted"><%= f.reason || '—' %></td>
+            <td class="col-action"><a class="btn small" href="/advisor/cases/<%= f.id %>">Open</a></td>
+          </tr>
+        <% }) %>
+        <% if (!history.length) { %><tr><td colspan="5" class="empty">No decisions yet.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="templates-title">
+  <div class="card-head"><h2 id="templates-title">Real form templates</h2><span class="meta">Public forms used as schemas for the test cases</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Form</th><th>Type</th><th>Source</th></tr></thead>
+      <tbody>
+        <% templates.forEach(function (t) { %>
+          <tr>
+            <td><%= t.name %></td>
+            <td class="mono"><%= t.type %></td>
+            <td><a href="<%= t.source_url %>" target="_blank" rel="noreferrer">Open ↗</a></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <%- include('../partials/footer') %>

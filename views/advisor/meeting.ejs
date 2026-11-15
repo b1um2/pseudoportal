@@ -4,58 +4,65 @@
 <div class="page-head">
   <div>
     <h1>Schedule meeting</h1>
-    <p class="muted"><%= meeting.student_name %> · <%= meeting.student_no %> · <%= meeting.program %></p>
+    <p><%= meeting.student_name %> · <span class="mono"><%= meeting.student_no %></span> · <%= meeting.program %></p>
   </div>
   <a class="btn" href="/advisor/meetings">All meetings</a>
 </div>
 
 <% if (error === 'conflict') { %>
-  <div class="notice">That time conflicts with the student's or your schedule. Pick another slot.</div>
+  <div class="notice warn">That time conflicts with the student's or your schedule. Pick another slot.</div>
 <% } %>
 
-<section class="card">
-  <h2>Request</h2>
-  <dl class="facts">
-    <dt>Reason</dt><dd><%= meeting.reason || '—' %></dd>
-    <dt>Preferred date</dt><dd><%= meeting.preferred_date || '—' %></dd>
-    <dt>Status</dt><dd><%= meeting.status %></dd>
-    <% if (meeting.start_at) { %>
-      <dt>Scheduled</dt><dd><%= fmtDate(meeting.start_at) %> · <%= fmtTime(meeting.start_at) %></dd>
-    <% } %>
-  </dl>
+<section class="card" aria-labelledby="request-title">
+  <div class="card-head">
+    <h2 id="request-title">Request</h2>
+    <span class="badge <%= meeting.status === 'scheduled' ? 'ok' : meeting.status === 'rejected' ? 'bad' : 'warn' %>"><%= meeting.status %></span>
+  </div>
+  <div class="card-body">
+    <dl class="facts">
+      <dt>Reason</dt><dd><%= meeting.reason || '—' %></dd>
+      <dt>Preferred date</dt><dd class="mono"><%= meeting.preferred_date || '—' %></dd>
+      <dt>Status</dt><dd><%= meeting.status %></dd>
+      <% if (meeting.start_at) { %>
+        <dt>Scheduled</dt><dd class="mono"><%= fmtDate(meeting.start_at) %> · <%= fmtTime(meeting.start_at) %></dd>
+      <% } %>
+    </dl>
+  </div>
 </section>
 
 <% if (meeting.status === 'requested') { %>
-<section class="card">
-  <h2>Available times</h2>
-  <form method="get" action="/advisor/meetings/<%= meeting.id %>" class="actions">
-    <label class="inline">Date <input type="date" name="date" value="<%= date %>"></label>
-    <button class="btn small" type="submit">Show slots</button>
-  </form>
+<section class="card" aria-labelledby="slots-title">
+  <div class="card-head"><h2 id="slots-title">Available times</h2></div>
+  <div class="card-body">
+    <form method="get" action="/advisor/meetings/<%= meeting.id %>" class="actions">
+      <label class="inline">Date <input type="date" name="date" value="<%= date %>"></label>
+      <button class="btn small" type="submit">Show slots</button>
+    </form>
 
-  <% if (!slots.length) { %>
-    <p class="muted">No free slots on this date. Choose another date.</p>
-  <% } else { %>
-    <div class="slot-grid">
-      <% slots.forEach(function (time) { %>
-        <form method="post" action="/advisor/meetings/<%= meeting.id %>/schedule">
-          <input type="hidden" name="date" value="<%= date %>">
-          <input type="hidden" name="time" value="<%= time %>">
-          <button class="btn slot" type="submit"><%= time %></button>
-        </form>
-      <% }) %>
-    </div>
-  <% } %>
+    <% if (!slots.length) { %>
+      <p class="muted" style="margin: 16px 0 0">No free slots on this date. Choose another date.</p>
+    <% } else { %>
+      <div class="slot-grid">
+        <% slots.forEach(function (time) { %>
+          <form method="post" action="/advisor/meetings/<%= meeting.id %>/schedule">
+            <input type="hidden" name="date" value="<%= date %>">
+            <input type="hidden" name="time" value="<%= time %>">
+            <button class="btn slot" type="submit"><%= time %></button>
+          </form>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Reject request</h2>
-  <p class="muted">Reject if the requested time cannot work and the student should propose another date.</p>
-  <form method="post" action="/advisor/meetings/<%= meeting.id %>/reject" class="stack" onsubmit="return confirm('Reject this meeting request?');">
+<section class="card" aria-labelledby="reject-title">
+  <div class="card-head"><h2 id="reject-title">Reject request</h2></div>
+  <form method="post" action="/advisor/meetings/<%= meeting.id %>/reject" class="card-body stack" onsubmit="return confirm('Reject this meeting request?');">
+    <p class="muted" style="margin: 0">Reject if the requested time cannot work and the student should propose another date.</p>
     <label>Reason
       <input name="reason" placeholder="No available slot on the requested date.">
     </label>
-    <button class="btn reject" type="submit">Reject meeting</button>
+    <div><button class="btn reject" type="submit">Reject meeting</button></div>
   </form>
 </section>
 <% } %>

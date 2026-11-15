@@ -1,24 +1,31 @@
+<%
+  const navPath = typeof currentPath === 'string' ? currentPath : '';
+  const navClass = (active) => active ? 'active' : '';
+  const under = (prefix) => navPath === prefix || navPath.startsWith(prefix + '/');
+%>
 <header class="topbar">
-  <div class="brand">AyADVI <span>pseudoportal</span></div>
-  <nav class="nav">
-    <% if (user && user.role === 'student') { %>
-      <a href="/student">Overview</a>
-    <% } %>
-    <% if (user && user.role === 'advisor') { %>
-      <a href="/advisor">Queue</a>
-      <a href="/advisor/meetings">Meetings</a>
-      <a href="/advisor/messages">Messages</a>
-      <a href="/advisor/audit">Audit</a>
-      <a href="/students/new">New student</a>
-    <% } %>
-    <% if (user && user.role === 'professor') { %>
-      <a href="/professor">Sections</a>
-      <a href="/students/new">New student</a>
-    <% } %>
-  </nav>
-  <div class="who">
-    <span><%= user.display_name %> · <%= user.role %></span>
-    <form method="post" action="/logout"><button class="link">Log out</button></form>
+  <div class="topbar-inner">
+    <div class="brand">AyADVI <span>pseudoportal</span></div>
+    <nav class="nav" aria-label="Main">
+      <% if (user && user.role === 'student') { %>
+        <a href="/student" class="<%= navClass(navPath === '/student') %>">Overview</a>
+      <% } %>
+      <% if (user && user.role === 'advisor') { %>
+        <a href="/advisor" class="<%= navClass(navPath === '/advisor' || under('/advisor/cases')) %>">Queue</a>
+        <a href="/advisor/meetings" class="<%= navClass(under('/advisor/meetings')) %>">Meetings</a>
+        <a href="/advisor/messages" class="<%= navClass(under('/advisor/messages')) %>">Messages</a>
+        <a href="/advisor/audit" class="<%= navClass(under('/advisor/audit')) %>">Audit</a>
+        <a href="/students/new" class="<%= navClass(under('/students')) %>">New student</a>
+      <% } %>
+      <% if (user && user.role === 'professor') { %>
+        <a href="/professor" class="<%= navClass(under('/professor')) %>">Sections</a>
+        <a href="/students/new" class="<%= navClass(under('/students')) %>">New student</a>
+      <% } %>
+    </nav>
+    <div class="who">
+      <span class="who-badge"><%= user.display_name %> · <%= user.role %></span>
+      <form method="post" action="/logout"><button class="btn-logout" type="submit">Log out</button></form>
+    </div>
   </div>
 </header>
 <main class="container">

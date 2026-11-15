@@ -1,6 +1,6 @@
 # AyADVI pseudoportal
 
-A test portal for the advising agent. Student, advisor, and professor logins; PostgreSQL; a REST API; and mock data built from open datasets. The agent is a separate project.
+An independent test university portal. Student, advisor, and professor logins; PostgreSQL; a REST API; and mock data built from open datasets. The agent is a separate project.
 
 The portal does **not** ask for a password to accept or reject. The portal
 accepts a short-lived signed grant. For petition-form decisions and meeting
@@ -129,15 +129,16 @@ Advisors see **Meetings** in the navigation:
 - A meeting case summary and the latest scheduled/rejected meeting decisions.
 
 **Reset meetings** only returns the 24 meeting test cases to `requested`; form
-decisions are untouched. The scheduling agent polls every 0.5 seconds, reasons
-over the verified slots with the model, assigns a conflict-free time to each
-request, and writes the result back through the grant-protected API. **Apply true
+decisions are untouched. The v2 advisor worker reads requested meetings, loads
+the advisor profile, proposes a verified slot, and writes an entry to the
+**agent dashboard** for human approval. The advisor portal does not expose AI
+suggestions. **Apply true
 meetings** restores only the meeting outcomes
 from `true-meeting-answers.json`. **Check meetings** compares the 24 meetings and
-should show `24/24`.
+should show `24/24` after approval.
 
-When a student asks the messaging agent to schedule a meeting, the agent creates
-a meeting request with `source = message`. Professor requests are linked to a
+When a student asks the chat assistant to schedule a meeting, the assistant
+creates a meeting request. Professor requests are linked to a
 professor from the student's enrolled sections. The scheduling agent proposes a
 conflict-free time and sends it to the agent dashboard for manual approval before
 writing the schedule.
@@ -157,6 +158,45 @@ polls the same URL every 1.5 seconds and replaces only the `data-live` sections,
 so input forms and scroll position are left alone. Message panels show only the
 latest five messages. Sending a student message uses a background request and
 updates the live panel without a page reload.
+
+## Student assistant
+
+Students send messages inside the **Messages** section of the student dashboard.
+The portal only stores the text; an independent responder service polls the
+read-only message API and writes its reply back through the message reply API.
+The reply is ordinary Markdown text in the same thread, so the portal does not
+know which helper produced it. Form and meeting requests are persisted through
+the external API and wait for the advisor workflow.
+
+Message bodies are rendered as safe Markdown in both student and advisor
+threads. The portal also supports a generic inline colour extension:
+
+```text
+[Form Helper]{color=#7c3aed}
+```
+
+Only literal `#rgb` or `#rrggbb` values are accepted; raw HTML is escaped. The
+agent service uses this extension to prepend its identity to each reply, so
+agent names and colours live in the agent code rather than the portal.
+
+## Message safety
+
+The portal sends every text-bearing POST body through the generic safety
+service `/guard` endpoint before storing it. This covers student messages, advisor
+replies, form and petition reasons, meeting reasons, agent suggestions and review
+reasons. Assistant replies are checked again before they are written to the
+thread. The guard uses an open-weight safety model and fails closed if the
+classifier is unavailable.
+
+## AI dashboard
+
+AI suggestions are shown **only in the agent dashboard at
+`http://localhost:3002`**. The advisor portal has no AI-suggestion page or
+navigation link. The background orchestrator creates suggestions from pending
+forms and meetings using policy plus the advisor's knowledge-graph profile.
+Each suggestion shows its reasoning and profile version/cold-start state.
+**Approve & apply** in the dashboard is the only path that changes a form or
+meeting from a suggestion; it calls the portal API.
 
 ## Advisor messages
 
@@ -197,9 +237,9 @@ a CAPP PDF, student message, or form cannot read the dashboard code or execute a
 unapproved form decision or meeting. Normal message replies are sent directly and
 are not approval-gated.
 
-The messaging agent can also fill a petition form on a student's behalf. It
+An external client can also submit a petition form on a student's behalf. It
 creates a `form submit` approval; after the dashboard code is approved, the
-portal creates a pending form marked **filled by agent**, and the advisor can
+portal creates a normal pending form, and the advisor can
 review it in the queue.
 
 Anti-spam limits are enforced by the portal: a student can have at most three
@@ -207,30 +247,24 @@ pending approvals, at most three approval requests per minute, and only one
 message-sourced meeting request per 24 hours. A duplicate request for the same
 action reuses the existing pending approval instead of creating another.
 
-**Hybrid agent decisions (local benchmark).** The advising agent uses a
-deterministic rule engine for routine forms. The scheduling agent sends the
-verified availability slots to the cheap language model, which reasons about
-the request and assigns a conflict-free date and time. The portal rechecks the
-slot before writing, and partial unique indexes prevent overlapping meetings for
-the student, advisor, or professor. The scheduling agent does not reject a
-request just because the preferred time is busy; it assigns an alternative.
+**Agent v2: chatbot + advisor suggestions.** The student assistant is embedded
+inside the Messages section of the student dashboard and is backed by the agent
+process on port 3003. It routes to `forms_helper`, `faq_helper`, or
+`meetings_helper`. The helpers use the MCP
+server for form and meeting requests.
 
-The advising and scheduling paths use a short-lived service grant minted from
-`AGENT_GRANT_SECRET` in the local test harness. This is deliberately a test-only
-credential: it is never shown to the model. Messaging writes go through the
-dashboard approval-code flow instead. For production, set
-`ENGINE_ENABLED=false`, remove the service secret from the agent runtime, and let
-the host app mint grants only after authentication.
+A background advisor orchestrator wakes every 20 minutes. It reads pending
+forms and meetings, loads the advisor's knowledge-graph profile, and writes
+LLM-generated suggestions to `ai_suggestions`. They are reviewed **only in the
+agent dashboard** at `localhost:3002`. Nothing is applied until the human clicks
+**Approve & apply** there.
 
-After **Reset queue** and **Reset meetings**, one full pass produces:
-
-```
-74/74
-```
-
-That is 100% on the prepared 74-case benchmark (50 forms + 24 meetings), not a
-guarantee for unseen cases. The model's meeting reasoning is stored and shown in
-the advisor portal's latest meeting decisions.
+The older v1 automatic advising/scheduling loops are no longer started. After
+**Reset queue**, a random 50% of the 50 form cases go back to pending and the
+other 50% keep their decisions. The queue check covers only forms and shows
+about `25/50`; it does not jump back on its own. The Meetings page resets a random
+50% of the 24 scheduling cases separately, so the rest keep their scheduled
+outcomes. The KG agent rebuilds per-advisor patterns weekly.
 
 ## Test cases
 
@@ -266,25 +300,35 @@ The script reports matches, mismatches, agreement rate, expected approval rate, 
 
 ## Preparing cases for an agent run
 
-The advisor queue page has a **Reset queue** button and a **Check** button. The
-Meetings page has the equivalent **Reset meetings**, **Apply true meetings**,
-and **Check meetings** controls for only the 24 meeting cases.
+The advisor queue page has **Reset queue**, **Apply true forms**, and
+**Check forms** controls for only the 50 form cases. The Meetings page has
+**Reset meetings**, **Apply true meetings**, and **Check meetings** for only the
+24 scheduling cases.
 
 **Reset queue**:
 
-1. Deletes the current form `decisions` rows.
-2. Sets every form back to `pending` with no decision.
-3. Leaves every meeting appointment unchanged.
+1. Chooses a random 50% of the 50 form test cases.
+2. Sets those forms back to `pending` and clears their decisions.
+3. Leaves the other 50% of forms decided.
+4. Leaves every meeting appointment unchanged.
 
-Use **Reset meetings** on the Meetings page to reset only the 24 meeting cases.
+Use **Reset meetings** to reset a random 50% of the 24 meeting test cases; the
+other meetings keep their scheduled outcomes.
 
 It does **not** archive or delete students, courses, messages, enrollments, degree evaluations, or `test_cases`.
 
 The true answers are saved in **`true-answers.json`** and **`true-meeting-answers.json`**. Reset does not change those files.
 
-**Apply true answers** reads both JSON files and restores every form decision and every meeting schedule/rejection. It is the fastest way to restore the baseline after a reset.
+**Apply true forms** reads `true-answers.json` and restores only the 50 form
+decisions. **Apply true meetings** on the Meetings page restores only the 24
+meeting outcomes from `true-meeting-answers.json`.
 
-**Check** compares the current decisions with `true-answers.json` (forms) and `true-meeting-answers.json` (meetings). Its label updates to `Check x/total` — currently `Check 74/74` (50 forms + 24 meetings). Clicking it prints the mismatches to the browser console with case code, record id, expected result, actual result, status, and rule.
+**Check forms** compares the 50 form decisions with `true-answers.json`.
+**Check meetings** compares the 24 meetings with `true-meeting-answers.json`.
+They are separate: the queue never includes meeting results, and the Meetings
+page never includes form results. Clicking either prints mismatches to the
+browser console with case code, record id, expected result, actual result,
+status, and rule.
 
 After the agent processes the pending cases, you can also fill `agent-results.json` and compare:
 
@@ -297,8 +341,8 @@ npm run evaluate -- agent-results.json
 These use the advisor session cookie, not the agent API key:
 
 ```
-GET  /api/advisor/check-results   # 50 forms + 24 meetings
-GET  /api/advisor/check-meetings  # 24 meetings
+GET  /api/advisor/check-results   # 50 forms only
+GET  /api/advisor/check-meetings  # 24 scheduling cases only
 ```
 
 ## Agent dashboard approval API

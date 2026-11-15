@@ -104,7 +104,6 @@ CREATE TABLE IF NOT EXISTS forms (
   submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   data_json JSONB NOT NULL,
   assigned_advisor_id INTEGER REFERENCES advisors(id),
-  filled_by_agent BOOLEAN NOT NULL DEFAULT FALSE,
   decision TEXT,
   decided_by INTEGER,
   decided_at TIMESTAMPTZ,
@@ -127,7 +126,35 @@ CREATE TABLE IF NOT EXISTS decisions (
   action TEXT NOT NULL,
   reason TEXT,
   agent_recommendation TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  request_id TEXT,
+  advisor_id TEXT,
+  form_type TEXT,
+  outcome TEXT,
+  comment TEXT,
+  decided_at TIMESTAMPTZ,
+  ai_suggestion_id INTEGER,
+  ai_suggestion_accepted BOOLEAN,
+  student_snapshot_json JSONB
+);
+
+CREATE TABLE IF NOT EXISTS ai_suggestions (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('form', 'meeting')),
+  form_id INTEGER REFERENCES forms(id) ON DELETE CASCADE,
+  appointment_id INTEGER,
+  advisor_id TEXT,
+  student_id INTEGER,
+  action TEXT NOT NULL,
+  payload_json JSONB,
+  reasoning TEXT,
+  model TEXT,
+  profile_version INTEGER,
+  cold_start BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'superseded')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  decided_at TIMESTAMPTZ,
+  decided_by INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS overrides (
@@ -179,6 +206,56 @@ CREATE TABLE IF NOT EXISTS meeting_test_cases (
   expected_decision TEXT NOT NULL,
   expected_rule TEXT,
   notes TEXT
+);
+
+-- Read-only meeting history view.
+CREATE OR REPLACE VIEW meetings AS
+SELECT
+  ap.id,
+  ap.advisor_id,
+  ap.student_id,
+  CASE WHEN ap.preferred_date IS NOT NULL
+       THEN ap.preferred_date || COALESCE(' ' || ap.preferred_time, '')
+       ELSE NULL END AS requested_slot,
+  ap.start_at AS confirmed_slot,
+  60 AS duration_min,
+  ap.requested_at,
+  COALESCE(ap.start_at, ap.requested_at) AS responded_at,
+  ap.status
+FROM appointments ap;
+
+CREATE TABLE IF NOT EXISTS kg_nodes (
+  id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  key TEXT NOT NULL,
+  props_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  version INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (id, version)
+);
+
+CREATE TABLE IF NOT EXISTS kg_edges (
+  id TEXT NOT NULL,
+  src_id TEXT NOT NULL,
+  dst_id TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  weight DOUBLE PRECISION,
+  sample_size INTEGER NOT NULL DEFAULT 0,
+  evidence_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  props_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  version INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (id, version)
+);
+
+CREATE TABLE IF NOT EXISTS kg_runs (
+  id SERIAL PRIMARY KEY,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'running',
+  last_decision_ts TIMESTAMPTZ,
+  version INTEGER NOT NULL,
+  error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -271,7 +348,50 @@ async function init() {
   await pool.query(`ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS payload JSONB`);
   await pool.query(`ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS used_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS student_id INTEGER`);
-  await pool.query(`ALTER TABLE forms ADD COLUMN IF NOT EXISTS filled_by_agent BOOLEAN NOT NULL DEFAULT FALSE`);
+  for (const [name, type] of [
+    ['request_id', 'TEXT'], ['advisor_id', 'TEXT'], ['form_type', 'TEXT'], ['outcome', 'TEXT'],
+    ['comment', 'TEXT'], ['decided_at', 'TIMESTAMPTZ'], ['ai_suggestion_id', 'INTEGER'],
+    ['ai_suggestion_accepted', 'BOOLEAN'], ['student_snapshot_json', 'JSONB']
+  ]) {
+    await pool.query(`ALTER TABLE decisions ADD COLUMN IF NOT EXISTS ${name} ${type}`);
+  }
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_decisions_advisor_time ON decisions(advisor_id, decided_at)`);
+  await pool.query(`
+    UPDATE decisions d SET
+      advisor_id = COALESCE(d.advisor_id, f.assigned_advisor_id::text),
+      form_type = COALESCE(d.form_type, lower(f.type)),
+      outcome = COALESCE(d.outcome, CASE d.action WHEN 'accept' THEN 'approved' WHEN 'reject' THEN 'rejected' END),
+      decided_at = COALESCE(d.decided_at, d.created_at),
+      student_snapshot_json = COALESCE(d.student_snapshot_json,
+        jsonb_build_object('gpa', s.cumulative_gpa, 'standing', s.standing))
+    FROM forms f JOIN students s ON s.id = f.student_id
+    WHERE f.id = d.form_id
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_suggestions_pending ON ai_suggestions(status, kind)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS ux_ai_suggestions_pending_form ON ai_suggestions(form_id) WHERE status = 'pending' AND form_id IS NOT NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS ux_ai_suggestions_pending_meeting ON ai_suggestions(appointment_id) WHERE status = 'pending' AND appointment_id IS NOT NULL`);
+  await pool.query(`ALTER TABLE kg_edges ADD COLUMN IF NOT EXISTS props_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
+  // Drop review items whose request was already decided or reset elsewhere.
+  await pool.query(`
+    UPDATE ai_suggestions ai SET status = 'superseded', decided_at = NOW()
+    WHERE ai.status = 'pending' AND (
+      (ai.kind = 'form' AND EXISTS (SELECT 1 FROM forms f WHERE f.id = ai.form_id AND f.status <> 'pending'))
+      OR (ai.kind = 'meeting' AND EXISTS (SELECT 1 FROM appointments a WHERE a.id = ai.appointment_id AND a.status <> 'requested'))
+    )
+  `);
+  await pool.query(`
+    UPDATE ai_suggestions ai SET status = 'superseded', decided_at = NOW()
+    WHERE ai.kind = 'meeting' AND ai.status = 'pending'
+      AND EXISTS (
+        SELECT 1
+        FROM appointments a
+        JOIN appointments own ON own.id = ai.appointment_id
+        WHERE a.status IN ('scheduled','booked')
+          AND to_char(a.start_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') = ai.payload_json->>'date'
+          AND to_char(a.start_at AT TIME ZONE 'UTC', 'HH24:MI') = ai.payload_json->>'time'
+          AND (a.student_id = own.student_id OR a.advisor_id = own.advisor_id OR a.professor_id = own.professor_id)
+      )
+  `);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN start_at DROP NOT NULL`);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN end_at DROP NOT NULL`);
 
@@ -296,6 +416,11 @@ async function init() {
 
 async function reset() {
   await pool.query(`
+    DROP VIEW IF EXISTS meetings CASCADE;
+    DROP TABLE IF EXISTS ai_suggestions CASCADE;
+    DROP TABLE IF EXISTS kg_edges CASCADE;
+    DROP TABLE IF EXISTS kg_nodes CASCADE;
+    DROP TABLE IF EXISTS kg_runs CASCADE;
     DROP TABLE IF EXISTS agent_approvals CASCADE;
     DROP TABLE IF EXISTS messages CASCADE;
     DROP TABLE IF EXISTS meeting_test_cases CASCADE;

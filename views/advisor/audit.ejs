@@ -1,24 +1,31 @@
 <%- include('../partials/head') %>
 <%- include('../partials/nav') %>
 
-<div class="page-head"><h1>Audit log</h1><p class="muted">Every login, submission, decision, and failure.</p></div>
+<div class="page-head">
+  <div>
+    <h1>Audit log</h1>
+    <p>Every login, submission, decision, and failure.</p>
+  </div>
+</div>
 
-<section class="card">
-  <table>
-    <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Object</th><th>Details</th></tr></thead>
-    <tbody id="live-audit" data-live>
-      <% rows.forEach(function (r) { %>
-        <tr>
-          <td><%= fmtDateTime(r.created_at) %></td>
-          <td><%= r.actor_name || r.actor_id || 'system' %></td>
-          <td><%= r.action %></td>
-          <td><%= r.object_type %> #<%= r.object_id %></td>
-          <td class="muted"><%= JSON.stringify(r.details) %></td>
-        </tr>
-      <% }) %>
-      <% if (!rows.length) { %><tr><td colspan="5" class="muted">No audit rows yet.</td></tr><% } %>
-    </tbody>
-  </table>
+<section class="card" aria-label="Audit entries">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Object</th><th>Details</th></tr></thead>
+      <tbody id="live-audit" data-live>
+        <% rows.forEach(function (r) { %>
+          <tr>
+            <td class="mono nowrap"><%= fmtDateTime(r.created_at) %></td>
+            <td class="nowrap"><%= r.actor_name || r.actor_id || 'system' %></td>
+            <td class="mono nowrap" style="color: var(--green); font-weight: 500"><%= r.action %></td>
+            <td class="mono nowrap"><%= r.object_type %> #<%= r.object_id %></td>
+            <td><span class="json-tag"><%= JSON.stringify(r.details) %></span></td>
+          </tr>
+        <% }) %>
+        <% if (!rows.length) { %><tr><td colspan="5" class="empty">No audit rows yet.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <%- include('../partials/footer') %>

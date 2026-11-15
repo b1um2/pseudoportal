@@ -1,7 +1,7 @@
 {
   "name": "pseudoportal",
   "version": "1.0.0",
-  "description": "AyADVI pseudoportal - a test portal for the advising agent",
+  "description": "AyADVI pseudoportal - a test university portal with PostgreSQL mock data",
   "main": "index.js",
   "scripts": {
     "start": "node server.js",

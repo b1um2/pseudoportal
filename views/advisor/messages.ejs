@@ -4,26 +4,28 @@
 <div class="page-head">
   <div>
     <h1>Messages</h1>
-    <p class="muted">Threads with students in your caseload.</p>
+    <p>Threads with students in your caseload.</p>
   </div>
 </div>
 
-<section class="card">
-  <table>
-    <thead><tr><th>Student</th><th>Last message</th><th>When</th><th>Unread</th><th></th></tr></thead>
-    <tbody id="live-threads" data-live>
-      <% threads.forEach(function (t) { %>
-        <tr>
-          <td><strong><%= t.student_name %></strong><br><span class="muted"><%= t.student_no %></span></td>
-          <td class="muted"><%= t.last_body || 'No messages yet' %></td>
-          <td><%= t.last_at ? fmtDateTime(t.last_at) : '—' %></td>
-          <td><% if (t.unread) { %><span class="badge warn"><%= t.unread %></span><% } else { %>—<% } %></td>
-          <td><a class="btn small" href="/advisor/messages/<%= t.student_id %>">Open</a></td>
-        </tr>
-      <% }) %>
-      <% if (!threads.length) { %><tr><td colspan="5" class="muted">No students in your caseload.</td></tr><% } %>
-    </tbody>
-  </table>
+<section class="card" aria-label="Message threads">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Student</th><th>Last message</th><th>When</th><th>Unread</th><th class="col-action"><span class="sr-only">Action</span></th></tr></thead>
+      <tbody id="live-threads" data-live>
+        <% threads.forEach(function (t) { %>
+          <tr>
+            <td class="nowrap"><span class="cell-main"><%= t.student_name %></span><span class="cell-sub mono"><%= t.student_no %></span></td>
+            <td class="muted"><%= t.last_body_text || t.last_body || 'No messages yet' %></td>
+            <td class="mono nowrap"><%= t.last_at ? fmtDateTime(t.last_at) : '—' %></td>
+            <td><% if (t.unread) { %><span class="badge warn"><%= t.unread %></span><% } else { %><span class="muted">—</span><% } %></td>
+            <td class="col-action"><a class="btn small" href="/advisor/messages/<%= t.student_id %>">Open</a></td>
+          </tr>
+        <% }) %>
+        <% if (!threads.length) { %><tr><td colspan="5" class="empty">No students in your caseload.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <%- include('../partials/footer') %>

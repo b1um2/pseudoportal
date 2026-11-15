@@ -4,33 +4,36 @@
 <div class="page-head">
   <div>
     <h1>New student</h1>
-    <p class="muted">Advisors and professors can create a student profile. The login is generated automatically.</p>
+    <p>Advisors and professors can create a student profile. The login is generated automatically.</p>
   </div>
 </div>
 
-<section class="card narrow">
-  <form method="post" action="/students/new" class="stack">
+<section class="card narrow" aria-labelledby="profile-title">
+  <div class="card-head"><h2 id="profile-title">Student profile</h2></div>
+  <form method="post" action="/students/new" class="card-body stack">
     <label>Full name
       <input name="display_name" placeholder="e.g. Student 026" required>
     </label>
     <label>Email
       <input name="email" type="email" placeholder="student26@example.edu">
     </label>
-    <label>Program
-      <select name="program">
-        <option>BS Computer Science</option>
-        <option>BS Business Administration</option>
-      </select>
-    </label>
-    <label>Campus
-      <select name="campus">
-        <option>Beirut</option>
-        <option>Byblos</option>
-      </select>
-    </label>
-    <button class="btn primary" type="submit">Create student</button>
+    <div class="form-grid">
+      <label>Program
+        <select name="program">
+          <option>BS Computer Science</option>
+          <option>BS Business Administration</option>
+        </select>
+      </label>
+      <label>Campus
+        <select name="campus">
+          <option>Beirut</option>
+          <option>Byblos</option>
+        </select>
+      </label>
+    </div>
+    <div><button class="btn primary" type="submit">Create student</button></div>
   </form>
-  <p class="muted">The new account uses password <strong>1234</strong>.</p>
+  <div class="card-foot"><p>The new account uses password <strong class="mono">1234</strong>.</p></div>
 </section>
 
 <%- include('../partials/footer') %>

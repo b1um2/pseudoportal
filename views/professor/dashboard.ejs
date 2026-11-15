@@ -4,72 +4,86 @@
 <div class="page-head">
   <div>
     <h1>Professor workspace</h1>
-    <p class="muted"><%= professor.department %> · course-level overrides</p>
+    <p><%= professor.department %> · course-level overrides</p>
   </div>
 </div>
 
-<section class="card">
-  <h2>My sections</h2>
-  <table>
-    <thead><tr><th>Course</th><th>Title</th><th>Term</th><th>CRN</th><th>Enrolled</th><th>Schedule</th></tr></thead>
-    <tbody>
-      <% sections.forEach(function (s) { %>
-        <tr>
-          <td><strong><%= s.code %></strong></td>
-          <td><%= s.title %></td>
-          <td><%= s.term %></td>
-          <td><%= s.crn %></td>
-          <td><%= s.enrolled %> / <%= s.capacity %></td>
-          <td><%= s.schedule %></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+<section class="card" aria-labelledby="sections-title">
+  <div class="card-head"><h2 id="sections-title">My sections</h2><span class="meta"><%= sections.length %> sections</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Course</th><th>Title</th><th>Term</th><th>CRN</th><th>Enrolled</th><th>Schedule</th></tr></thead>
+      <tbody>
+        <% sections.forEach(function (s) { %>
+          <% const fill = s.capacity ? Math.min(100, Math.round((s.enrolled / s.capacity) * 100)) : 0; %>
+          <tr>
+            <td class="mono nowrap"><strong><%= s.code %></strong></td>
+            <td><%= s.title %></td>
+            <td class="mono nowrap"><%= s.term %></td>
+            <td class="mono"><%= s.crn %></td>
+            <td style="min-width: 150px"><div class="meter"><span class="mono nowrap"><%= s.enrolled %> / <%= s.capacity %></span><div class="progress"><div class="progress-bar" style="width:<%= fill %>%"></div></div></div></td>
+            <td class="nowrap"><%= s.schedule %></td>
+          </tr>
+        <% }) %>
+        <% if (!sections.length) { %><tr><td colspan="6" class="empty">No sections assigned.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Prerequisite override requests</h2>
-  <p class="muted">Manual decisions are recorded here. The agent/MCP path requires a signed grant.</p>
-  <label class="inline">Reason <input id="override-reason" placeholder="Optional reason"></label>
+<section class="card" aria-labelledby="overrides-title">
+  <div class="card-head"><h2 id="overrides-title">Prerequisite override requests</h2></div>
+  <div class="filter-bar">
+    <label>Decision reason (optional)
+      <input id="override-reason" placeholder="Optional reason">
+    </label>
+    <p>Manual decisions are recorded here. API decisions require a signed grant.</p>
+    <div id="override-result" class="form-result" role="status"></div>
+  </div>
 
-  <table>
-    <thead><tr><th>Student</th><th>Course</th><th>Term</th><th>Reason</th><th>Status</th><th></th></tr></thead>
-    <tbody id="live-overrides" data-live>
-      <% overrides.forEach(function (o) { %>
-        <tr>
-          <td><strong><%= o.student_name %></strong><br><span class="muted"><%= o.student_no %></span></td>
-          <td><%= o.code %> · <%= o.title %></td>
-          <td><%= o.term %></td>
-          <td class="muted"><%= o.reason %></td>
-          <td><span class="badge <%= o.status === 'approved' ? 'ok' : o.status === 'denied' ? 'bad' : 'warn' %>"><%= o.status %></span></td>
-          <td class="actions">
-            <% if (o.status === 'pending') { %>
-              <button class="btn small accept" onclick="decideOverride(<%= o.id %>, 'approve')">Approve</button>
-              <button class="btn small reject" onclick="decideOverride(<%= o.id %>, 'deny')">Deny</button>
-            <% } %>
-          </td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Student</th><th>Course</th><th>Term</th><th>Reason</th><th>Status</th><th class="col-action"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody id="live-overrides" data-live>
+        <% overrides.forEach(function (o) { %>
+          <tr>
+            <td class="nowrap"><span class="cell-main"><%= o.student_name %></span><span class="cell-sub mono"><%= o.student_no %></span></td>
+            <td><span class="mono"><strong><%= o.code %></strong></span><span class="cell-sub"><%= o.title %></span></td>
+            <td class="mono nowrap"><%= o.term %></td>
+            <td class="muted"><%= o.reason %></td>
+            <td><span class="badge <%= o.status === 'approved' ? 'ok' : o.status === 'denied' ? 'bad' : 'warn' %>"><%= o.status %></span></td>
+            <td class="col-action actions">
+              <% if (o.status === 'pending') { %>
+                <button class="btn small accept" type="button" onclick="decideOverride(<%= o.id %>, 'approve')">Approve</button>
+                <button class="btn small reject" type="button" onclick="decideOverride(<%= o.id %>, 'deny')">Deny</button>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (!overrides.length) { %><tr><td colspan="6" class="empty">No override requests.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Meetings</h2>
-  <table>
-    <thead><tr><th>Student</th><th>When</th><th>Reason</th><th>Status</th></tr></thead>
-    <tbody id="live-professor-meetings" data-live>
-      <% meetings.forEach(function (m) { %>
-        <tr>
-          <td><strong><%= m.student_name %></strong><br><span class="muted"><%= m.student_no %></span></td>
-          <td><%= fmtDate(m.start_at) %> · <%= fmtTime(m.start_at) %></td>
-          <td class="muted"><%= m.reason || '—' %></td>
-          <td><span class="badge ok"><%= m.status %></span></td>
-        </tr>
-      <% }) %>
-      <% if (!meetings.length) { %><tr><td colspan="4" class="muted">No meetings scheduled.</td></tr><% } %>
-    </tbody>
-  </table>
+<section class="card" aria-labelledby="pmeetings-title">
+  <div class="card-head"><h2 id="pmeetings-title">Meetings</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Student</th><th>When</th><th>Reason</th><th>Status</th></tr></thead>
+      <tbody id="live-professor-meetings" data-live>
+        <% meetings.forEach(function (m) { %>
+          <tr>
+            <td class="nowrap"><span class="cell-main"><%= m.student_name %></span><span class="cell-sub mono"><%= m.student_no %></span></td>
+            <td class="mono nowrap"><%= fmtDate(m.start_at) %> · <%= fmtTime(m.start_at) %></td>
+            <td class="muted"><%= m.reason || '—' %></td>
+            <td><span class="badge <%= m.status === 'booked' ? 'warn' : 'ok' %>"><%= m.status %></span></td>
+          </tr>
+        <% }) %>
+        <% if (!meetings.length) { %><tr><td colspan="4" class="empty">No meetings scheduled.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <%- include('../partials/footer') %>

@@ -4,23 +4,28 @@
 <div class="page-head">
   <div>
     <h1>Student created</h1>
-    <p class="muted">The profile and initial degree evaluation are ready.</p>
+    <p>The profile and initial degree evaluation are ready.</p>
   </div>
 </div>
 
-<section class="card narrow">
-  <dl class="facts">
-    <dt>Name</dt><dd><%= student.display_name %></dd>
-    <dt>Student no.</dt><dd><%= student.student_no %></dd>
-    <dt>Program</dt><dd><%= student.program %></dd>
-    <dt>Campus</dt><dd><%= student.campus %></dd>
-    <dt>Username</dt><dd><strong><%= username %></strong></dd>
-    <dt>Password</dt><dd><strong>1234</strong></dd>
-  </dl>
-  <p class="muted">The degree evaluation starts at 0 credits. Enrollments can be added later.</p>
-  <div class="actions">
-    <a class="btn primary" href="/students/new">Create another</a>
-    <a class="btn" href="/<%= user.role === 'advisor' ? 'advisor' : 'professor' %>">Back to workspace</a>
+<section class="card narrow" aria-labelledby="created-title">
+  <div class="card-head"><h2 id="created-title">Account details</h2><span class="badge ok">created</span></div>
+  <div class="card-body">
+    <dl class="facts">
+      <dt>Name</dt><dd><%= student.display_name %></dd>
+      <dt>Student no.</dt><dd class="mono"><%= student.student_no %></dd>
+      <dt>Program</dt><dd><%= student.program %></dd>
+      <dt>Campus</dt><dd><%= student.campus %></dd>
+      <dt>Username</dt><dd class="mono"><strong><%= username %></strong></dd>
+      <dt>Password</dt><dd class="mono"><strong>1234</strong></dd>
+    </dl>
+  </div>
+  <div class="card-section stack">
+    <p class="muted" style="margin: 0">The degree evaluation starts at 0 credits. Enrollments can be added later.</p>
+    <div class="actions">
+      <a class="btn primary" href="/students/new">Create another</a>
+      <a class="btn" href="/<%= user.role === 'advisor' ? 'advisor' : 'professor' %>">Back to workspace</a>
+    </div>
   </div>
 </section>
 

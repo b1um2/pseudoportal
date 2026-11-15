@@ -4,75 +4,98 @@
 <div class="page-head">
   <div>
     <h1>Student overview</h1>
-    <p class="muted"><%= student.student_no %> · <%= student.program %> · <%= student.campus %></p>
+    <p><span class="mono"><%= student.student_no %></span> · <%= student.program %> · <%= student.campus %></p>
   </div>
-  <span class="badge <%= student.standing === 'good' ? 'ok' : 'warn' %>"><%= student.standing %></span>
+  <span class="badge <%= student.standing === 'good' ? 'ok' : 'warn' %>"><%= student.standing %> standing</span>
 </div>
 
-<div class="grid two">
-  <section class="card">
-    <h2>Profile</h2>
-    <dl class="facts">
-      <dt>Name</dt><dd><%= user.display_name %></dd>
-      <dt>Advisor</dt><dd><%= student.advisor_name || 'Not assigned' %></dd>
-      <dt>Catalog</dt><dd><%= student.catalog_year %></dd>
-      <dt>GPA</dt><dd><%= Number(student.cumulative_gpa).toFixed(2) %></dd>
-    </dl>
-  </section>
-
-  <section class="card">
-    <h2>Degree progress</h2>
-    <% if (capp) { %>
-      <div class="progress"><div class="progress-bar" style="width:<%= Math.min(100, Math.round((capp.total_earned / capp.total_required) * 100)) %>%"></div></div>
-      <p class="muted"><%= capp.total_earned %> / <%= capp.total_required %> credits · GPA <%= Number(capp.gpa).toFixed(2) %></p>
+<section class="card" aria-labelledby="summary-title">
+  <div class="card-head">
+    <h2 id="summary-title">Academic summary</h2>
+    <span class="meta"><%= user.display_name %> · Advisor: <%= student.advisor_name || 'Not assigned' %></span>
+  </div>
+  <div class="summary-grid">
+    <div class="summary-cell">
+      <div class="stat-label">Catalog year</div>
+      <div class="stat-value"><%= student.catalog_year %></div>
+    </div>
+    <div class="summary-cell">
+      <div class="stat-label">Cumulative GPA</div>
+      <div class="stat-value"><%= Number(student.cumulative_gpa).toFixed(2) %></div>
+    </div>
+    <div class="summary-cell">
+      <div class="stat-label">Program</div>
+      <div class="summary-text"><%= student.program %></div>
+    </div>
+    <div class="summary-cell">
+      <div class="stat-label">Credits earned</div>
+      <% if (capp) { %>
+        <% const totalPct = Math.min(100, Math.round((capp.total_earned / capp.total_required) * 100)); %>
+        <div><span class="stat-value"><%= capp.total_earned %></span><span class="summary-note">of <%= capp.total_required %> · <%= totalPct %>%</span></div>
+        <div class="progress thin"><div class="progress-bar" style="width:<%= totalPct %>%"></div></div>
+      <% } else { %>
+        <div class="summary-text muted">—</div>
+      <% } %>
+    </div>
+  </div>
+  <% if (capp) { %>
+    <div class="req-grid">
       <% capp.groups.forEach(function (g) { %>
-        <div class="requirement">
-          <div class="requirement-row"><span><%= g.name %></span><span><%= g.applied %> / <%= g.required %></span></div>
-          <div class="progress small"><div class="progress-bar" style="width:<%= Math.min(100, Math.round((g.applied / g.required) * 100)) %>%"></div></div>
+        <% const pct = Math.min(100, Math.round((g.applied / g.required) * 100)); %>
+        <div class="req-tile">
+          <div class="requirement-row"><span class="name"><%= g.name %></span><span class="mono"><%= g.applied %> / <%= g.required %></span></div>
+          <div class="progress"><div class="progress-bar" style="width:<%= pct %>%"></div></div>
+          <div class="req-note"><%= pct %>% · <%= g.applied >= g.required ? 'met' : 'in progress' %></div>
         </div>
       <% }) %>
-    <% } else { %>
-      <p class="muted">No CAPP evaluation loaded.</p>
-    <% } %>
-  </section>
-</div>
+    </div>
+  <% } else { %>
+    <div class="card-body muted">No CAPP evaluation loaded.</div>
+  <% } %>
+</section>
 
-<section class="card">
-  <h2>Courses</h2>
-  <table>
-    <thead><tr><th>Code</th><th>Title</th><th>Term</th><th>Status</th><th>Grade</th></tr></thead>
-    <tbody>
-      <% enrollments.forEach(function (e) { %>
-        <tr>
-          <td><%= e.code %></td>
-          <td><%= e.title %></td>
-          <td><%= e.term %></td>
-          <td><span class="badge <%= e.status === 'completed' ? 'ok' : '' %>"><%= e.status %></span></td>
-          <td><%= e.grade || '—' %></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+<section class="card" aria-labelledby="courses-title">
+  <div class="card-head"><h2 id="courses-title">Courses</h2><span class="meta">Enrolled and completed</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Title</th><th>Term</th><th>Status</th><th>Grade</th></tr></thead>
+      <tbody>
+        <% enrollments.forEach(function (e) { %>
+          <tr>
+            <td class="mono nowrap"><%= e.code %></td>
+            <td><%= e.title %></td>
+            <td class="mono nowrap"><%= e.term %></td>
+            <td><span class="badge <%= e.status === 'completed' || e.status === 'enrolled' ? 'ok' : e.status === 'dropped' ? 'bad' : '' %>"><%= e.status %></span></td>
+            <td class="mono"><%= e.grade || '—' %></td>
+          </tr>
+        <% }) %>
+        <% if (!enrollments.length) { %><tr><td colspan="5" class="empty">No courses on record.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <div class="grid two">
-  <section class="card">
-    <h2>Forms and petitions</h2>
-    <table>
-      <thead><tr><th>Type</th><th>Term</th><th>Status</th></tr></thead>
-      <tbody id="live-student-forms" data-live>
-        <% forms.forEach(function (f) { %>
-          <tr>
-            <td><%= f.type.replaceAll('_', ' ') %><% if (f.filled_by_agent) { %><br><span class="badge warn">filled by agent</span><% } %></td>
-            <td><%= f.term %></td>
-            <td><span class="badge <%= f.status === 'approved' ? 'ok' : f.status === 'rejected' ? 'bad' : 'warn' %>"><%= f.status %></span></td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
+  <section class="card" aria-labelledby="forms-title">
+    <div class="card-head"><h2 id="forms-title">Forms and petitions</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Type</th><th>Term</th><th>Status</th></tr></thead>
+        <tbody id="live-student-forms" data-live>
+          <% forms.forEach(function (f) { %>
+            <tr>
+              <td><%= f.type.replaceAll('_', ' ') %></td>
+              <td class="mono nowrap"><%= f.term %></td>
+              <td><span class="badge <%= f.status === 'approved' ? 'ok' : f.status === 'rejected' ? 'bad' : 'warn' %>"><%= f.status %></span></td>
+            </tr>
+          <% }) %>
+          <% if (!forms.length) { %><tr><td colspan="3" class="empty">No forms submitted.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
 
-    <h3>New request</h3>
-    <form method="post" action="/student/forms" class="stack">
+    <form method="post" action="/student/forms" class="card-section stack">
+      <h3>New request</h3>
       <label>Type
         <select name="type">
           <option value="OVERLOAD">Overload</option>
@@ -82,54 +105,62 @@
         </select>
       </label>
       <label>Reason
-        <textarea name="reason" rows="2" placeholder="Short reason for the request" required></textarea>
+        <textarea name="reason" rows="3" placeholder="Short reason for the request" required></textarea>
       </label>
-      <button class="btn primary" type="submit">Submit request</button>
+      <div><button class="btn primary" type="submit">Submit request</button></div>
     </form>
   </section>
 
-  <section class="card">
-    <h2>Meetings</h2>
-    <div id="live-student-meetings" data-live>
-      <% if (!appointments.length) { %><p class="muted">No meetings yet.</p><% } %>
-      <% appointments.forEach(function (a) { %>
-        <div class="list-row">
-          <span><%= a.start_at ? fmtDate(a.start_at) + ' · ' + fmtTime(a.start_at) : 'Requested' %></span>
-          <span class="badge <%= a.status === 'scheduled' || a.status === 'booked' ? 'ok' : 'warn' %>"><%= a.status %></span>
-          <span class="muted"><%= a.meeting_type === 'professor' ? (a.professor_name || 'Professor') : (a.advisor_name || 'Advisor') %></span>
-        </div>
-      <% }) %>
-    </div>
+  <div class="stack-col">
+    <section class="card" aria-labelledby="meetings-title">
+      <div class="card-head"><h2 id="meetings-title">Meetings</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>When</th><th>With</th><th>Status</th></tr></thead>
+          <tbody id="live-student-meetings" data-live>
+            <% appointments.forEach(function (a) { %>
+              <tr>
+                <td class="mono nowrap"><%= a.start_at ? fmtDate(a.start_at) + ' · ' + fmtTime(a.start_at) : 'Requested' %></td>
+                <td><%= a.meeting_type === 'professor' ? (a.professor_name || 'Professor') : (a.advisor_name || 'Advisor') %></td>
+                <td><span class="badge <%= a.status === 'scheduled' ? 'ok' : a.status === 'rejected' ? 'bad' : 'warn' %>"><%= a.status %></span></td>
+              </tr>
+            <% }) %>
+            <% if (!appointments.length) { %><tr><td colspan="3" class="empty">No meetings yet.</td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
 
-    <h3>Request a meeting</h3>
-    <form method="post" action="/student/meetings" class="stack">
-      <label>Reason
-        <textarea name="reason" rows="2" placeholder="What do you want to discuss?" required></textarea>
-      </label>
-      <label>Preferred date
-        <input type="date" name="preferred_date">
-      </label>
-      <button class="btn primary" type="submit">Request meeting</button>
-    </form>
+      <form method="post" action="/student/meetings" class="card-section stack">
+        <h3>Request a meeting</h3>
+        <label>Reason
+          <textarea name="reason" rows="2" placeholder="What do you want to discuss?" required></textarea>
+        </label>
+        <label>Preferred date
+          <input type="date" name="preferred_date">
+        </label>
+        <div><button class="btn primary" type="submit">Request meeting</button></div>
+      </form>
+    </section>
 
-    <h2 class="spaced">Messages</h2>
-    <p class="muted">Showing the latest 5 messages.</p>
-    <div id="live-student-messages" data-live>
-      <% messages.forEach(function (m) { %>
-        <div class="message <%= m.sender_role %>">
-          <div class="message-meta"><%= m.sender_role %> · <%= fmtDate(m.created_at) %></div>
-          <div><%= m.body %></div>
-        </div>
-      <% }) %>
-    </div>
-    <form method="post" action="/student/messages" class="stack" id="student-message-form">
-      <label>Message your advisor
-        <textarea name="body" id="student-message-body" rows="2" placeholder="Write a short message" required></textarea>
-      </label>
-      <button class="btn" type="submit">Send message</button>
-      <div id="student-message-result" class="muted"></div>
-    </form>
-  </section>
+    <section class="card" aria-labelledby="messages-title">
+      <div class="card-head"><h2 id="messages-title">Messages</h2><span class="meta">Latest 5</span></div>
+      <div class="thread" id="live-student-messages" data-live>
+        <% if (!messages.length) { %><p class="thread-empty">No messages yet.</p><% } %>
+        <% messages.forEach(function (m) { %>
+          <div class="message <%= m.sender_role %>">
+            <div class="message-meta"><span class="message-role"><%= m.sender_role %></span><span class="mono"><%= fmtDate(m.created_at) %></span></div>
+            <div class="message-body"><%- m.body_html %></div>
+          </div>
+        <% }) %>
+      </div>
+      <form method="post" action="/student/messages" class="card-section stack" id="student-message-form">
+        <label>Message
+          <textarea name="body" id="student-message-body" rows="2" placeholder="Ask about policy, a form, or a meeting" required></textarea>
+        </label>
+        <div class="actions"><button class="btn" type="submit">Send message</button><div id="student-message-result" class="form-result"></div></div>
+      </form>
+    </section>
+  </div>
 </div>
 
 <%- include('../partials/footer') %>
